@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>주차 등록 대상자 명단</title>
+  <style>
+    :root {
+      /* ===== 화면/인쇄 공통 ===== */
+      --ink: #111;
+      --muted: rgba(17, 17, 17, 0.72);
+      --line: rgba(17, 17, 17, 0.22);
+      --line-strong: rgba(17, 17, 17, 0.45);
+      --pill: #f2f3f5;
+
+      /* 자동 조절 값(기본) */
+      --cols: 4;
+      --fs: 10pt;
+      --lh: 1.28;
+      --row-gap: 1.6mm;
+
+      /* A4 구성 */
+      --paper-w: 210mm;
+      --paper-h: 297mm;
+      --pad-x: 7mm;
+      --pad-y: 7mm;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: var(--ink);
+      font-family: 'Malgun Gothic', '맑은 고딕', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+    }
+
+    /* 화면에서 A4 미리보기 느낌 */
+    body { padding: 12px; }
+
+    .page {
+      width: var(--paper-w);
+      height: var(--paper-h);
+      margin: 0 auto;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      border: 1px solid rgba(17, 17, 17, 0.12);
+      border-radius: 10px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 3mm;
+      overflow: hidden;
+    }
+
+    .controls {
+      width: var(--paper-w);
+      margin: 0 auto 10px auto;
+      padding: 10px 12px;
+      box-sizing: border-box;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      border: 1px solid rgba(17, 17, 17, 0.12);
+      border-radius: 10px;
+      background: #fbfbfc;
+    }
+
+    .controls input[type="file"],
+    .controls input[type="date"] {
+      padding: 6px 8px;
+    }
+
+    .controls button {
+      padding: 8px 14px;
+      font-size: 14px;
+      background: #111;
+      color: #fff;
+      border: 1px solid #111;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .controls button:hover { opacity: 0.92; }
+
+    .controls .hint {
+      width: 100%;
+      text-align: center;
+      font-size: 12px;
+      color: rgba(17, 17, 17, 0.64);
+    }
+
+    .header {
+      text-align: center;
+    }
+
+    .title {
+      margin: 0;
+      font-weight: 900;
+      font-size: 22pt;
+      letter-spacing: -0.3px;
+    }
+
+    .date {
+      margin-top: 1mm;
+      font-size: 14pt;
+      color: rgba(17, 17, 17, 0.82);
+      font-weight: 700;
+    }
+
+    .notice {
+      margin-top: 1.5mm;
+      font-size: 10.5pt;
+      color: var(--muted);
+      line-height: 1.25;
+    }
+
+    .notice .warn {
+      color: #c01818;
+      font-weight: 900;
+    }
+
+    /* ===== 핵심: 표가 아닌 "디렉토리" 레이아웃 ===== */
+    .content {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .list {
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(var(--cols), 1fr);
+      grid-auto-rows: min-content;
+      gap: 5mm;
+      font-size: var(--fs);
+      line-height: var(--lh);
+      align-content: start;
+      overflow: hidden; /* 2페이지로 새지 않게 (JS가 컬럼에 맞춰 담음) */
+      min-height: 0;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 2.5mm;
+    }
+
+    .group {
+      /* "초성 그룹" 단위로만 구분되도록: 그룹 박스(그리드) */
+      margin: 0;
+      padding: 1.6mm 1.6mm 1.2mm 1.6mm;
+      border: 0.6px solid rgba(17, 17, 17, 0.18);
+      border-radius: 8px;
+      background: rgba(17, 17, 17, 0.015);
+    }
+
+    .initial {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 8mm;
+      height: 6mm;
+      padding: 0 2.5mm;
+      border-radius: 999px;
+      background: var(--pill);
+      border: 0.6px solid rgba(17, 17, 17, 0.16);
+      font-weight: 900;
+      margin: 0 0 1.4mm 0;
+    }
+
+    .entry {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 2mm;
+      padding: 0;
+      margin: 0 0 var(--row-gap) 0;
+      white-space: nowrap;
+    }
+
+    .name {
+      flex: 0 0 auto;
+      /* 이름/차량번호의 "톤 차이"를 줄여 눈 피로 감소 */
+      font-weight: 700;
+      max-width: 22mm; /* 이름 너무 길면 줄이기 */
+      overflow: hidden;
+      text-overflow: clip;
+    }
+
+    .dots {
+      flex: 1 1 auto;
+      min-height: 2px;
+      height: 2px;
+      align-self: center;
+      background-image: linear-gradient(to right, rgba(17,17,17,0.22) 33%, rgba(255,255,255,0) 0%);
+      background-size: 4px 1px;
+      background-repeat: repeat-x;
+      background-position: center;
+      margin: 0 1.5mm;
+    }
+
+    .plate {
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum";
+      /* 고정폭 폰트는 대비가 너무 커서 → 기본 본문 폰트로 통일 + 숫자 정렬감만 유지 */
+      font-family: inherit;
+      font-weight: 700;
+      letter-spacing: 0;
+      max-width: 30mm;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+
+    /* ===== 인쇄 ===== */
+    @media print {
+      body { padding: 0; }
+      .controls { display: none !important; }
+      .page {
+        border: none;
+        border-radius: 0;
+        width: var(--paper-w);
+        height: var(--paper-h);
+        margin: 0;
+        padding: var(--pad-y) var(--pad-x);
+      }
+      @page {
+        size: A4;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <input type="file" id="csvFileInput" accept=".csv" />
+    <label for="dateInput">날짜:</label>
+    <input type="date" id="dateInput" />
+    <button id="btnGenerate" onclick="loadCSV()">CSV 파일로 명단 생성</button>
+    <div class="hint">인쇄 시 하단 경로가 보이면: <b>추가 설정 → 머리글 및 바닥글 끄기</b></div>
+  </div>
+
+  <div class="page" id="page">
+    <div class="header" id="headerSection" style="display:none;">
+      <h1 class="title">주차 등록 대상자 명단</h1>
+      <div class="date" id="dateSection"></div>
+      <div class="notice">
+        <div class="warn">* 명단에 없는 등록교인분들은 안내봉사팀에 문의해 주세요.</div>
+        <div>명단에 있는 분들은 별도로 QR 찍지 않아도 무료주차등록(3시간)이 적용됩니다.</div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+
+  <script>
+    function getInitialConsonant(name) {
+      if (!name || name.length === 0) return '기타';
+      const firstChar = name[0];
+      if ('가' <= firstChar && firstChar <= '힣') {
+        const code = firstChar.charCodeAt(0) - 0xAC00;
+        const initialIndex = Math.floor(code / 588);
+        const initials = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+        return initials[initialIndex] || firstChar;
+      }
+      return firstChar;
+    }
+
+    function parseCSV(text) {
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      const lines = text.split(/\r?\n/).filter(line => line.trim());
+      if (lines.length === 0) return [];
+      const headers = lines[0].split(',').map(h => h.trim());
+      const data = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const row = {};
+        headers.forEach((header, index) => { row[header] = values[index] || ''; });
+        if (row['성함'] && row['차량번호']) {
+          data.push({ name: row['성함'].trim(), carNumber: row['차량번호'].trim() });
+        }
+      }
+      return data;
+    }
+
+    function groupByInitial(data) {
+      const groups = {};
+      data.forEach(item => {
+        const initial = getInitialConsonant(item.name);
+        if (!groups[initial]) groups[initial] = [];
+        groups[initial].push(item);
+      });
+
+      const initialOrder = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+      const sortedGroups = {};
+      initialOrder.forEach(initial => {
+        if (groups[initial]) {
+          sortedGroups[initial] = groups[initial].sort((a, b) => a.name.localeCompare(b.name));
+        }
+      });
+      // 기타도 붙이기
+      Object.keys(groups).forEach(k => {
+        if (!sortedGroups[k]) {
+          sortedGroups[k] = groups[k].sort((a, b) => a.name.localeCompare(b.name));
+        }
+      });
+
+      return sortedGroups;
+    }
+
+    function setDateText() {
+      const dateInput = document.getElementById('dateInput');
+      let dateStr;
+      if (dateInput.value) {
+        const [y, m, d] = dateInput.value.split('-');
+        dateStr = `${y}. ${m}. ${d}`;
+      } else {
+        const today = new Date();
+        dateStr = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${String(today.getDate()).padStart(2, '0')}`;
+      }
+      document.getElementById('dateSection').textContent = dateStr;
+    }
+
+    function renderList(groups) {
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+
+      const cols = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cols')) || 4;
+      const contentEl = document.querySelector('.content');
+      // 여유를 10% 더 줘서 공간 활용 최적화
+      const availableHeight = contentEl ? contentEl.clientHeight * 1.05 : 0;
+
+      // ---- 측정(현재 폰트/간격 기준) ----
+      const measureWrap = document.createElement('div');
+      measureWrap.style.position = 'absolute';
+      measureWrap.style.visibility = 'hidden';
+      measureWrap.style.pointerEvents = 'none';
+      measureWrap.style.left = '-9999px';
+      measureWrap.style.top = '0';
+      measureWrap.style.width = '60mm';
+
+      const measureGroupHeaderOnly = document.createElement('div');
+      measureGroupHeaderOnly.className = 'group';
+      const measureInitial = document.createElement('div');
+      measureInitial.className = 'initial';
+      measureInitial.textContent = 'ㅇ';
+      measureGroupHeaderOnly.appendChild(measureInitial);
+
+      const measureEntry = document.createElement('div');
+      measureEntry.className = 'entry';
+      const mName = document.createElement('span');
+      mName.className = 'name';
+      mName.textContent = '홍길동';
+      const mDots = document.createElement('span');
+      mDots.className = 'dots';
+      const mPlate = document.createElement('span');
+      mPlate.className = 'plate';
+      mPlate.textContent = '12가 3456';
+      measureEntry.appendChild(mName);
+      measureEntry.appendChild(mDots);
+      measureEntry.appendChild(mPlate);
+
+      measureWrap.appendChild(measureGroupHeaderOnly);
+      measureWrap.appendChild(measureEntry);
+      document.body.appendChild(measureWrap);
+
+      const headerOnlyHeight = Math.ceil(measureGroupHeaderOnly.getBoundingClientRect().height) * 0.95;
+      const entryRect = measureEntry.getBoundingClientRect();
+      const entryStyles = getComputedStyle(measureEntry);
+      const entryMarginBottom = parseFloat(entryStyles.marginBottom || '0') || 0;
+      const entryOuterHeight = Math.ceil(entryRect.height + entryMarginBottom) * 0.95;
+
+      // column gap(px)
+      const tmpCol = document.createElement('div');
+      tmpCol.className = 'column';
+      tmpCol.style.visibility = 'hidden';
+      tmpCol.style.position = 'absolute';
+      tmpCol.style.left = '-9999px';
+      tmpCol.style.top = '0';
+      tmpCol.appendChild(document.createElement('div'));
+      tmpCol.appendChild(document.createElement('div'));
+      document.body.appendChild(tmpCol);
+      const colGap = parseFloat(getComputedStyle(tmpCol).rowGap || getComputedStyle(tmpCol).gap || '0') || 0;
+
+      // cleanup
+      document.body.removeChild(measureWrap);
+      document.body.removeChild(tmpCol);
+
+      // ---- 데이터 플래튼 → 항목 단위로 평탄화 (초성 정보 포함) ----
+      const allItems = [];
+      Object.keys(groups).forEach(initial => {
+        groups[initial].forEach(item => {
+          allItems.push({ initial, ...item });
+        });
+      });
+
+      // ---- 컬럼 생성 ----
+      const columns = [];
+      for (let i = 0; i < cols; i++) {
+        const colEl = document.createElement('div');
+        colEl.className = 'column';
+        columns.push({ el: colEl, height: 0, currentInitial: null, currentGroup: null });
+        list.appendChild(colEl);
+      }
+
+      // ---- 항목 하나씩 위→아래로 채우기 (신문 스타일) ----
+      let colIdx = 0;
+      
+      for (const item of allItems) {
+        let col = columns[colIdx];
+        
+        // 초성이 바뀌거나 현재 그룹이 없으면 → 새 그룹 시작
+        const needsNewGroup = (!col.currentGroup) || (col.currentInitial !== item.initial);
+        
+        if (needsNewGroup) {
+          // 새 그룹 시작 전에: 헤더 + 최소 2개 항목이 들어갈 공간이 있는지 체크
+          const gapIfNeeded = (col.el.childElementCount > 0) ? colGap : 0;
+          const minGroupSpace = headerOnlyHeight + (entryOuterHeight * 2); // 헤더 + 최소 2개 항목
+          const projectedMin = col.height + gapIfNeeded + minGroupSpace;
+          
+          // 최소 공간도 없으면 다음 컬럼으로
+          if (availableHeight > 0 && projectedMin > availableHeight && colIdx < cols - 1) {
+            colIdx += 1;
+            col = columns[colIdx];
+          }
+          
+          // 새 그룹 생성
+          if (col.el.childElementCount > 0) col.height += colGap;
+          
+          const groupEl = document.createElement('div');
+          groupEl.className = 'group';
+          
+          const initialEl = document.createElement('div');
+          initialEl.className = 'initial';
+          initialEl.textContent = item.initial;
+          groupEl.appendChild(initialEl);
+          
+          col.el.appendChild(groupEl);
+          col.currentGroup = groupEl;
+          col.currentInitial = item.initial;
+          col.height += headerOnlyHeight;
+        }
+        
+        // 항목 추가 전에 높이 체크
+        const projectedEntry = col.height + entryOuterHeight;
+        if (availableHeight > 0 && projectedEntry > availableHeight && colIdx < cols - 1) {
+          // 다음 컬럼으로 넘어가면서 같은 초성 헤더 다시 표시
+          colIdx += 1;
+          col = columns[colIdx];
+          
+          // 새 그룹 생성 (같은 초성)
+          const groupEl = document.createElement('div');
+          groupEl.className = 'group';
+          
+          const initialEl = document.createElement('div');
+          initialEl.className = 'initial';
+          initialEl.textContent = item.initial;
+          groupEl.appendChild(initialEl);
+          
+          col.el.appendChild(groupEl);
+          col.currentGroup = groupEl;
+          col.currentInitial = item.initial;
+          col.height += headerOnlyHeight;
+        }
+        
+        // 항목 추가
+        const entry = document.createElement('div');
+        entry.className = 'entry';
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = item.name;
+
+        const dots = document.createElement('span');
+        dots.className = 'dots';
+
+        const plate = document.createElement('span');
+        plate.className = 'plate';
+        plate.textContent = item.carNumber;
+
+        entry.appendChild(name);
+        entry.appendChild(dots);
+        entry.appendChild(plate);
+        col.currentGroup.appendChild(entry);
+        
+        col.height += entryOuterHeight;
+      }
+    }
+
+    function applyAutoFit(totalItems, groups) {
+      // 기본: 4열. 인원이 적으면 3열이 더 큼직하고 예쁨.
+      let cols = 4;
+      if (totalItems <= 80) cols = 3;
+      if (totalItems >= 150) cols = 5; // 너무 많을 때만(폭이 줄어들어 가독성에 영향)
+
+      // "가독성 하한"을 지키면서 자동으로 줄이기
+      const presets = [
+        { fs: '10pt', lh: '1.26', rowGap: '1.50mm' },
+        { fs: '11pt', lh: '1.24', rowGap: '1.40mm' },
+        { fs: '10.5pt', lh: '1.22', rowGap: '1.30mm' },
+        { fs: '10pt', lh: '1.20', rowGap: '1.20mm' }, /* 가독성 하한 */
+      ];
+
+      const root = document.documentElement.style;
+      root.setProperty('--cols', String(cols));
+
+      const page = document.getElementById('page');
+      const content = document.querySelector('.content');
+
+      // 렌더링 안정화를 위해 2프레임 정도 여유
+      const tryFit = (i) => {
+        const p = presets[i] || presets[presets.length - 1];
+        root.setProperty('--fs', p.fs);
+        root.setProperty('--lh', p.lh);
+        root.setProperty('--row-gap', p.rowGap);
+
+        requestAnimationFrame(() => {
+          // 새 CSS 변수 적용 후 “높이 기준 packing”으로 다시 렌더
+          if (groups) renderList(groups);
+
+          requestAnimationFrame(() => {
+            const overflow = content
+              ? (content.scrollHeight > content.clientHeight + 1)
+              : (page.scrollHeight > page.clientHeight + 1);
+
+            if (!overflow || i >= presets.length - 1) return;
+            tryFit(i + 1);
+          });
+        });
+      };
+
+      // 초기 시도
+      tryFit(0);
+    }
+
+    function loadCSV() {
+      const fileInput = document.getElementById('csvFileInput');
+      const file = fileInput.files[0];
+      if (!file) {
+        alert('CSV 파일을 선택해주세요.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          const text = e.target.result;
+          const data = parseCSV(text);
+          if (data.length === 0) {
+            alert('CSV 파일에서 데이터를 읽을 수 없습니다.');
+            return;
+          }
+
+          document.getElementById('headerSection').style.display = 'block';
+          setDateText();
+
+          const groups = groupByInitial(data);
+          applyAutoFit(data.length, groups);
+
+        } catch (err) {
+          alert('CSV 파일 처리 중 오류가 발생했습니다: ' + err.message);
+          console.error(err);
+        }
+      };
+
+      reader.onerror = function () {
+        alert('파일 읽기 중 오류가 발생했습니다.');
+      };
+
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    window.onload = function () {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+    };
+  </script>
+</body>
+</html>

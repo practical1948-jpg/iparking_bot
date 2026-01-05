@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주차 등록 대상자 명단</title>
+    <style>
+        *:not(table):not(thead):not(tbody):not(tr):not(td):not(th) {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        table, thead, tbody, tr, td, th {
+            margin: 0;
+            padding: 0;
+            box-sizing: content-box;
+        }
+        body {
+            font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
+            padding: 3px;
+            background-color: #ffffff;
+        }
+        .container {
+            width: 100%;
+            max-width: 210mm;
+            margin: 0 auto;
+            background-color: white;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #000000;
+            font-size: 30px;
+            font-weight: bold;
+            margin-bottom: 6px;
+            line-height: 1.2;
+        }
+        .date {
+            color: #000000;
+            font-size: 20px;
+            margin-top: 4px;
+            line-height: 1.2;
+        }
+        .notice {
+            margin-top: 15px;
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        .notice p {
+            margin: 8px 0;
+            font-size: 14px;
+            text-align: center;
+        }
+        .notice .highlight {
+            color: #ff0000;
+            font-weight: bold;
+        }
+        .tables-container {
+            display: flex;
+            gap: 0;
+            width: 100%;
+        }
+        table {
+            flex: 1;
+            border-collapse: collapse;
+            margin-top: 2px;
+            border: 2px solid #000000;
+            font-size: 14px;
+            line-height: 18px;
+            table-layout: fixed;
+            width: 100%;
+        }
+        table:not(:last-child) {
+            border-right: none;
+        }
+        table:not(:first-child) {
+            border-left: none;
+        }
+        thead {
+            display: none;
+        }
+        th {
+            padding: 2px 3px;
+            text-align: center;
+            font-weight: bold;
+            border: 1px solid #000000;
+            background-color: #f0f0f0;
+            font-size: 16px;
+            line-height: 1.2;
+            overflow: hidden;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        th:first-child {
+            width: 40%;
+        }
+        th:last-child {
+            width: 60%;
+        }
+        td {
+            padding: 0px 3px !important;
+            border: 1px solid #000000;
+            text-align: center;
+            font-size: 14px;
+            line-height: 18px !important;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: clip;
+            max-width: 0;
+            height: 18px !important;
+            max-height: 18px !important;
+            min-height: 18px !important;
+            vertical-align: middle;
+            box-sizing: content-box !important;
+        }
+        tbody tr {
+            height: 20px !important;
+            max-height: 20px !important;
+            min-height: 20px !important;
+            line-height: 18px !important;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #ffffff;
+        }
+        tbody tr:nth-child(odd) {
+            background-color: #fafafa;
+        }
+        .number {
+            font-weight: bold;
+            text-align: center;
+            vertical-align: middle;
+            background-color: #e8e8e8;
+            font-size: 17px;
+            padding: 0px 3px !important;
+            width: 100%;
+            height: 18px !important;
+            max-height: 18px !important;
+            min-height: 18px !important;
+            line-height: 18px !important;
+            overflow: hidden;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            box-sizing: content-box !important;
+        }
+        .name {
+            text-align: center;
+            padding: 0px 3px !important;
+            width: 40%;
+            white-space: nowrap;
+            overflow: hidden;
+            height: 18px !important;
+            max-height: 18px !important;
+            min-height: 18px !important;
+            line-height: 18px !important;
+        }
+        .car-number {
+            text-align: left;
+            padding: 0px 3px !important;
+            width: 60%;
+            white-space: nowrap;
+            overflow: hidden;
+            height: 18px !important;
+            max-height: 18px !important;
+            min-height: 18px !important;
+            line-height: 18px !important;
+        }
+        .footer {
+            margin-top: 2px;
+            text-align: right;
+            color: #000000;
+            font-size: 10px;
+            padding-right: 2px;
+            line-height: 1.2;
+        }
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            table, thead, tbody, tr, td, th {
+                box-sizing: content-box !important;
+            }
+            body {
+                padding: 0;
+                background-color: white;
+                margin: 0;
+                width: 100%;
+            }
+            .container {
+                max-width: 100%;
+                margin: 0 auto;
+                padding: 0;
+            }
+            .header {
+                margin-bottom: 20px;
+                margin-top: 0;
+            }
+            h1 {
+                font-size: 30px;
+                margin-bottom: 6px;
+            }
+            .date {
+                font-size: 20px;
+                margin-top: 4px;
+            }
+            .notice {
+                margin-top: 15px !important;
+                margin-bottom: 10px !important;
+            }
+            .notice p {
+                font-size: 14px !important;
+                margin: 8px 0 !important;
+            }
+            .notice .highlight {
+                color: #ff0000 !important;
+                font-weight: bold !important;
+            }
+            .tables-container {
+                display: flex;
+                gap: 0;
+                width: 100%;
+            }
+            table:not(:last-child) {
+                border-right: none !important;
+            }
+            table:not(:first-child) {
+                border-left: none !important;
+            }
+            table {
+                page-break-inside: avoid;
+                border: 2px solid #000000 !important;
+            }
+            thead {
+                display: none !important;
+            }
+            td {
+                overflow: hidden !important;
+                white-space: nowrap !important;
+                text-overflow: clip !important;
+                height: 18px !important;
+                max-height: 18px !important;
+                min-height: 18px !important;
+                line-height: 18px !important;
+                border: 1px solid #000000 !important;
+                vertical-align: middle !important;
+                padding: 0px 3px !important;
+                box-sizing: content-box !important;
+            }
+            tbody tr {
+                height: 20px !important;
+                max-height: 20px !important;
+                min-height: 20px !important;
+                line-height: 18px !important;
+            }
+            .number {
+                height: 18px !important;
+                max-height: 18px !important;
+                min-height: 18px !important;
+                line-height: 18px !important;
+                padding: 0px 3px !important;
+                overflow: hidden !important;
+                box-sizing: content-box !important;
+            }
+            .car-number {
+                overflow: hidden !important;
+                white-space: nowrap !important;
+                height: 18px !important;
+                max-height: 18px !important;
+                min-height: 18px !important;
+                line-height: 18px !important;
+                padding: 0px 3px !important;
+            }
+            .name {
+                overflow: hidden !important;
+                white-space: nowrap !important;
+                height: 18px !important;
+                max-height: 18px !important;
+                min-height: 18px !important;
+                line-height: 18px !important;
+                padding: 0px 3px !important;
+            }
+            @page {
+                size: A4;
+                margin: 0mm 8mm 5mm 8mm;
+            }
+            /* 브라우저 인쇄 헤더 공간 최소화 */
+            @page :first {
+                margin-top: 0mm;
+            }
+            /* 브라우저 헤더 공간에 흰색 텍스트 배치 */
+            .print-header-spacer {
+                display: none;
+            }
+            .file-input-container {
+                display: none;
+            }
+            /* 인쇄 시 브라우저 헤더 공간에 흰색 텍스트 표시 */
+            .print-header-spacer {
+                display: block !important;
+                color: white !important;
+                font-size: 8px !important;
+                height: 20mm !important;
+                padding-top: 5mm !important;
+                margin: 0 !important;
+                line-height: 1.2 !important;
+            }
+        }
+        .file-input-container {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+        }
+        .file-input-container input[type="file"] {
+            margin: 10px;
+            padding: 5px;
+        }
+        .file-input-container input[type="date"] {
+            margin: 10px;
+            padding: 5px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .file-input-container label {
+            margin: 10px;
+            font-size: 14px;
+            display: inline-block;
+        }
+        .file-input-container button {
+            padding: 8px 16px;
+            font-size: 14px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .file-input-container button:hover {
+            background-color: #45a049;
+        }
+        .file-input-container button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .tables-container:empty {
+            display: none;
+        }
+        .header:has(+ .tables-container:empty) {
+            display: none;
+        }
+        .default-tables {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="file-input-container">
+            <input type="file" id="csvFileInput" accept=".csv" />
+            <label for="dateInput">날짜:</label>
+            <input type="date" id="dateInput" />
+            <button onclick="loadCSV()">CSV 파일로 명단 생성</button>
+        </div>
+        <!-- 브라우저 인쇄 헤더 공간용 흰색 텍스트 (인쇄 시에만 표시) -->
+        <div class="print-header-spacer" style="color: white; font-size: 8px; height: 20mm; padding-top: 5mm;">
+            <div>주차 등록 대상자 명단</div>
+            <div id="printDateSpacer">2025. 12. 04</div>
+        </div>
+        <div class="header" id="headerSection" style="display: none;">
+            <h1>주차 등록 대상자 명단</h1>
+            <div class="date" id="dateSection">2025. 12. 02</div>
+            <div class="notice">
+                <p class="highlight">* 명단에 없는 등록교인분들은 안내봉사팀에 문의해 주세요.</p>
+                <p>명단에 있는 분들은 별도로 QR 찍지 않아도 무료주차등록(3시간)이 적용됩니다.</p>
+            </div>
+        </div>
+        <div class="tables-container" id="tablesContainer">
+        </div>
+        <div class="default-tables">
+            <table>
+                <thead>
+                    <tr>
+                        <th>성함</th>
+                        <th>차량번호</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="number" colspan="2">ㄱ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">강신실</td>
+                        <td class="car-number">17소0978</td>
+                    </tr>
+                    <tr>
+                        <td class="name">고숙희</td>
+                        <td class="car-number">62고5013</td>
+                    </tr>
+                    <tr>
+                        <td class="name">구관서</td>
+                        <td class="car-number">162누7671</td>
+                    </tr>
+                    <tr>
+                        <td class="name">국승숙</td>
+                        <td class="car-number">06로4658</td>
+                    </tr>
+                    <tr>
+                        <td class="name">권유진</td>
+                        <td class="car-number">83보1686</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김강민</td>
+                        <td class="car-number">344다4955</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김경은</td>
+                        <td class="car-number">25더2659</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김규민</td>
+                        <td class="car-number">03루6479</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김민석</td>
+                        <td class="car-number">05구2291</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김보현</td>
+                        <td class="car-number">175오1449</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김선덕</td>
+                        <td class="car-number">15허0733</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김선미</td>
+                        <td class="car-number">11모5833</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김선희</td>
+                        <td class="car-number">246다7506</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김성준</td>
+                        <td class="car-number">143모3207</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김수철</td>
+                        <td class="car-number">113오3083</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김앙직</td>
+                        <td class="car-number">29나7657</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김애수</td>
+                        <td class="car-number">10너3679</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김용우</td>
+                        <td class="car-number">45수0412</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김재은</td>
+                        <td class="car-number">05하4755</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김정민</td>
+                        <td class="car-number">25수9410</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김종권</td>
+                        <td class="car-number">08부3606</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김종철</td>
+                        <td class="car-number">207호6125</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김지혜</td>
+                        <td class="car-number">205더4102</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김태국</td>
+                        <td class="car-number">37버1259</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김태원</td>
+                        <td class="car-number">03루6479</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김해린</td>
+                        <td class="car-number">101하9110</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김현빈</td>
+                        <td class="car-number">117루8382</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김현정</td>
+                        <td class="car-number">126하9430</td>
+                    </tr>
+                    <tr>
+                        <td class="name">김혜민</td>
+                        <td class="car-number">45마0438</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㄴ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">나혜옥</td>
+                        <td class="car-number">389우1278</td>
+                    </tr>
+                    <tr>
+                        <td class="name">노다희</td>
+                        <td class="car-number">42더0673</td>
+                    </tr>
+                    <tr>
+                        <td class="name">노미정</td>
+                        <td class="car-number">17우7719</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㄷ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">동현정</td>
+                        <td class="car-number">28나5039</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅁ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">마상진</td>
+                        <td class="car-number">287너9243</td>
+                    </tr>
+                    <tr>
+                        <td class="name">문상철</td>
+                        <td class="car-number">323나8599</td>
+                    </tr>
+                    <tr>
+                        <td class="name">문수정</td>
+                        <td class="car-number">10너7134</td>
+                    </tr>
+                    <tr>
+                        <td class="name">민묘희</td>
+                        <td class="car-number">392어7953</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅂ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박경제</td>
+                        <td class="car-number">126호1539</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박선현</td>
+                        <td class="car-number">40모7677</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박수영</td>
+                        <td class="car-number">270도8762</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박은성</td>
+                        <td class="car-number">363오5492</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박하영</td>
+                        <td class="car-number">27버0189</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박하영</td>
+                        <td class="car-number">18라9503</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박해정</td>
+                        <td class="car-number">224하6695</td>
+                    </tr>
+                    <tr>
+                        <td class="name">박혁거</td>
+                        <td class="car-number">171하3265</td>
+                    </tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr>
+                        <th>성함</th>
+                        <th>차량번호</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="number" colspan="2">ㅂ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">배기철</td>
+                        <td class="car-number">208고8054</td>
+                    </tr>
+                    <tr>
+                        <td class="name">변금자</td>
+                        <td class="car-number">32우7244</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅅ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">서용인</td>
+                        <td class="car-number">10너4955</td>
+                    </tr>
+                    <tr>
+                        <td class="name">석숙경</td>
+                        <td class="car-number">62루7634</td>
+                    </tr>
+                    <tr>
+                        <td class="name">손수진</td>
+                        <td class="car-number">275무2179</td>
+                    </tr>
+                    <tr>
+                        <td class="name">신범식</td>
+                        <td class="car-number">64도4188</td>
+                    </tr>
+                    <tr>
+                        <td class="name">신유전</td>
+                        <td class="car-number">58어3571</td>
+                    </tr>
+                    <tr>
+                        <td class="name">신인식</td>
+                        <td class="car-number">184다5920</td>
+                    </tr>
+                    <tr>
+                        <td class="name">신중철</td>
+                        <td class="car-number">41거2274</td>
+                    </tr>
+                    <tr>
+                        <td class="name">신태환</td>
+                        <td class="car-number">209서1998</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅇ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">안은지</td>
+                        <td class="car-number">21누2261</td>
+                    </tr>
+                    <tr>
+                        <td class="name">안응진</td>
+                        <td class="car-number">308머3937</td>
+                    </tr>
+                    <tr>
+                        <td class="name">안재홍</td>
+                        <td class="car-number">36로7876</td>
+                    </tr>
+                    <tr>
+                        <td class="name">안지홍</td>
+                        <td class="car-number">32더7331</td>
+                    </tr>
+                    <tr>
+                        <td class="name">안진영</td>
+                        <td class="car-number">02버2514</td>
+                    </tr>
+                    <tr>
+                        <td class="name">양승현</td>
+                        <td class="car-number">41보8997</td>
+                    </tr>
+                    <tr>
+                        <td class="name">양영재</td>
+                        <td class="car-number">325구3713</td>
+                    </tr>
+                    <tr>
+                        <td class="name">양현준</td>
+                        <td class="car-number">155로3631</td>
+                    </tr>
+                    <tr>
+                        <td class="name">양희승</td>
+                        <td class="car-number">66다0217</td>
+                    </tr>
+                    <tr>
+                        <td class="name">연양순</td>
+                        <td class="car-number">66더3298</td>
+                    </tr>
+                    <tr>
+                        <td class="name">오야긴</td>
+                        <td class="car-number">397로2683</td>
+                    </tr>
+                    <tr>
+                        <td class="name">오윤상</td>
+                        <td class="car-number">63루6830</td>
+                    </tr>
+                    <tr>
+                        <td class="name">오혜진</td>
+                        <td class="car-number">229호9728</td>
+                    </tr>
+                    <tr>
+                        <td class="name">원지훈</td>
+                        <td class="car-number">267소8154</td>
+                    </tr>
+                    <tr>
+                        <td class="name">유근영</td>
+                        <td class="car-number">52오4604</td>
+                    </tr>
+                    <tr>
+                        <td class="name">윤경란</td>
+                        <td class="car-number">14보5747</td>
+                    </tr>
+                    <tr>
+                        <td class="name">윤경선</td>
+                        <td class="car-number">351더9659</td>
+                    </tr>
+                    <tr>
+                        <td class="name">윤미숙</td>
+                        <td class="car-number">31수6109</td>
+                    </tr>
+                    <tr>
+                        <td class="name">윤성호</td>
+                        <td class="car-number">15도5502</td>
+                    </tr>
+                    <tr>
+                        <td class="name">윤지한</td>
+                        <td class="car-number">63가6300</td>
+                    </tr>
+                    <tr>
+                        <td class="name">윤희온</td>
+                        <td class="car-number">142어7128</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이가비</td>
+                        <td class="car-number">272라8532</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이건진</td>
+                        <td class="car-number">171조3672</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이경은</td>
+                        <td class="car-number">135누9164</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이경재</td>
+                        <td class="car-number">173보8597</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이광재</td>
+                        <td class="car-number">228호4633</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이동경</td>
+                        <td class="car-number">160보2090</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이동경</td>
+                        <td class="car-number">101하8326</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이동훈</td>
+                        <td class="car-number">109라6276</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이명찬</td>
+                        <td class="car-number">163루8471</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이미숙</td>
+                        <td class="car-number">31고9051</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이민식</td>
+                        <td class="car-number">186너9445</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이민재</td>
+                        <td class="car-number">229어7910</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이상오</td>
+                        <td class="car-number">32소9498</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이샛별</td>
+                        <td class="car-number">39머7893</td>
+                    </tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr>
+                        <th colspan="2">성함</th>
+                        <th>차량번호</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="number" rowspan="17">ㅇ</td>
+                        <td class="name">이성수</td>
+                        <td class="car-number">66머7306</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이성원</td>
+                        <td class="car-number">367더6414</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이소망</td>
+                        <td class="car-number">56다3015</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이옥자</td>
+                        <td class="car-number">202주2636</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이인아</td>
+                        <td class="car-number">124호4018</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이인정</td>
+                        <td class="car-number">66고2015</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이정림</td>
+                        <td class="car-number">367저3543</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이주경</td>
+                        <td class="car-number">135라4629</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이지영</td>
+                        <td class="car-number">52부3977</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이지혜</td>
+                        <td class="car-number">23루2793</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이진숙</td>
+                        <td class="car-number">11하2317</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이진숙</td>
+                        <td class="car-number">48다4322</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이진형</td>
+                        <td class="car-number">68다4242</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이호건</td>
+                        <td class="car-number">294가9758</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이효선</td>
+                        <td class="car-number">169허6625</td>
+                    </tr>
+                    <tr>
+                        <td class="name">이훈</td>
+                        <td class="car-number">05하4755</td>
+                    </tr>
+                    <tr>
+                        <td class="name">임윤창</td>
+                        <td class="car-number">48더6248</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅈ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">전자룡</td>
+                        <td class="car-number">28루4825</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정민</td>
+                        <td class="car-number">163거1715</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정민주</td>
+                        <td class="car-number">65가3014</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정봉균</td>
+                        <td class="car-number">60오1720</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정세윤</td>
+                        <td class="car-number">42서4631</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정수진</td>
+                        <td class="car-number">61조9245</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정연백</td>
+                        <td class="car-number">98무7039</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정윤재</td>
+                        <td class="car-number">23마6263</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정윤재</td>
+                        <td class="car-number">61서0741</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정일</td>
+                        <td class="car-number">347무6217</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정지애</td>
+                        <td class="car-number">34거2608</td>
+                    </tr>
+                    <tr>
+                        <td class="name">정해록</td>
+                        <td class="car-number">02주3493</td>
+                    </tr>
+                    <tr>
+                        <td class="name">조순옥</td>
+                        <td class="car-number">25고5827</td>
+                    </tr>
+                    <tr>
+                        <td class="name">조재명</td>
+                        <td class="car-number">241소1610</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅊ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">채연희</td>
+                        <td class="car-number">54마5316</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최무열</td>
+                        <td class="car-number">27두3000</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최미영</td>
+                        <td class="car-number">141러1332</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최유림</td>
+                        <td class="car-number">24두7449</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최유주</td>
+                        <td class="car-number">41라5209</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최정미</td>
+                        <td class="car-number">05허1759</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최정미</td>
+                        <td class="car-number">144거9704</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최진원</td>
+                        <td class="car-number">194호2324</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최진훈</td>
+                        <td class="car-number">271다4086</td>
+                    </tr>
+                    <tr>
+                        <td class="name">최현숙</td>
+                        <td class="car-number">53소6527</td>
+                    </tr>
+                    <tr>
+                        <td class="number" colspan="2">ㅎ</td>
+                    </tr>
+                    <tr>
+                        <td class="name">한필승</td>
+                        <td class="car-number">186머7311</td>
+                    </tr>
+                    <tr>
+                        <td class="name">현명진</td>
+                        <td class="car-number">812부6412</td>
+                    </tr>
+                    <tr>
+                        <td class="name">홍선령</td>
+                        <td class="car-number">30저1111</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        </div>
+    </div>
+    <script>
+        // 초성 추출 함수
+        function getInitialConsonant(name) {
+            if (!name || name.length === 0) return '기타';
+            
+            const firstChar = name[0];
+            if ('가' <= firstChar && firstChar <= '힣') {
+                const code = firstChar.charCodeAt(0) - 0xAC00;
+                const initialIndex = Math.floor(code / 588);
+                const initials = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+                if (0 <= initialIndex && initialIndex < initials.length) {
+                    return initials[initialIndex];
+                }
+            }
+            return firstChar;
+        }
+
+        // CSV 파싱 함수 (간단한 버전 - 쉼표가 데이터 안에 없는 경우)
+        function parseCSV(text) {
+            // BOM 제거
+            if (text.charCodeAt(0) === 0xFEFF) {
+                text = text.slice(1);
+            }
+            
+            const lines = text.split(/\r?\n/).filter(line => line.trim());
+            if (lines.length === 0) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                // 성함과 차량번호가 있는 경우만 추가
+                if (row['성함'] && row['차량번호']) {
+                    data.push({
+                        name: row['성함'].trim(),
+                        carNumber: row['차량번호'].trim()
+                    });
+                }
+            }
+            return data;
+        }
+
+        // 초성별로 그룹화
+        function groupByInitial(data) {
+            const groups = {};
+            data.forEach(item => {
+                const initial = getInitialConsonant(item.name);
+                if (!groups[initial]) {
+                    groups[initial] = [];
+                }
+                groups[initial].push(item);
+            });
+            
+            // 초성 순서대로 정렬
+            const initialOrder = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+            const sortedGroups = {};
+            initialOrder.forEach(initial => {
+                if (groups[initial]) {
+                    sortedGroups[initial] = groups[initial].sort((a, b) => a.name.localeCompare(b.name));
+                }
+            });
+            
+            return sortedGroups;
+        }
+
+        // 테이블 생성 함수 (Python 로직과 동일하게)
+        function generateTables(groups) {
+            const container = document.getElementById('tablesContainer');
+            container.innerHTML = '';
+            
+            // 헤더 표시
+            document.getElementById('headerSection').style.display = 'block';
+            
+            // 모든 데이터를 하나의 배열로 변환 (초성 정보 포함)
+            const allRows = [];
+            Object.keys(groups).forEach(initial => {
+                const groupItems = groups[initial];
+                groupItems.forEach((item) => {
+                    allRows.push({
+                        initial: initial,
+                        name: item.name,
+                        carNumber: item.carNumber
+                    });
+                });
+            });
+            
+            // 4개 테이블로 나누기 (단순히 행 수로 나눔)
+            const numColumns = 4;
+            const rowsPerColumn = Math.ceil(allRows.length / numColumns);
+            
+            // 전체 테이블에서 이미 표시된 초성을 추적
+            const displayedInitials = new Set();
+            
+            for (let colIdx = 0; colIdx < numColumns; colIdx++) {
+                const startIdx = colIdx * rowsPerColumn;
+                const endIdx = Math.min((colIdx + 1) * rowsPerColumn, allRows.length);
+                const columnRows = allRows.slice(startIdx, endIdx);
+                
+                const table = document.createElement('table');
+                const thead = document.createElement('thead');
+                const tbody = document.createElement('tbody');
+                
+                // 헤더 생성
+                const headerRow = document.createElement('tr');
+                const header1 = document.createElement('th');
+                header1.textContent = '성함';
+                const header2 = document.createElement('th');
+                header2.textContent = '차량번호';
+                headerRow.appendChild(header1);
+                headerRow.appendChild(header2);
+                thead.appendChild(headerRow);
+                
+                // 현재 그룹의 초성 추적
+                let prevInitial = null;
+                
+                columnRows.forEach((row, idx) => {
+                    const initial = row.initial;
+                    const isNewGroup = (prevInitial !== initial);
+                    const isFirstTime = !displayedInitials.has(initial);
+                    
+                        // 초성 그룹의 첫 번째 행이면서 전체 테이블에서 처음 나타나는 경우: 초성 표시
+                    if (isNewGroup && isFirstTime) {
+                        const initialRow = document.createElement('tr');
+                        initialRow.style.height = '20px';
+                        initialRow.style.maxHeight = '20px';
+                        initialRow.style.minHeight = '20px';
+                        initialRow.style.lineHeight = '18px';
+                        const initialCell = document.createElement('td');
+                        initialCell.className = 'number';
+                        initialCell.setAttribute('colspan', '2');
+                        initialCell.style.height = '18px';
+                        initialCell.style.maxHeight = '18px';
+                        initialCell.style.minHeight = '18px';
+                        initialCell.style.lineHeight = '18px';
+                        initialCell.style.padding = '0px 3px';
+                        initialCell.style.margin = '0px';
+                        initialCell.style.boxSizing = 'content-box';
+                        initialCell.style.fontSize = '17px';
+                        initialCell.style.overflow = 'hidden';
+                        initialCell.style.verticalAlign = 'middle';
+                        initialCell.textContent = initial;
+                        initialRow.appendChild(initialCell);
+                        tbody.appendChild(initialRow);
+                        
+                        displayedInitials.add(initial);
+                        prevInitial = initial;
+                    }
+                    
+                    // 모든 데이터 행 추가 (성함과 차량번호)
+                    const dataRow = document.createElement('tr');
+                    dataRow.style.height = '20px';
+                    dataRow.style.maxHeight = '20px';
+                    dataRow.style.minHeight = '20px';
+                    dataRow.style.lineHeight = '18px';
+                        const nameCell = document.createElement('td');
+                        nameCell.className = 'name';
+                    nameCell.style.height = '18px';
+                    nameCell.style.maxHeight = '18px';
+                    nameCell.style.minHeight = '18px';
+                    nameCell.style.lineHeight = '18px';
+                    nameCell.style.padding = '0px 3px';
+                    nameCell.style.margin = '0px';
+                    nameCell.style.boxSizing = 'content-box';
+                    nameCell.style.fontSize = '14px';
+                    nameCell.style.overflow = 'hidden';
+                    nameCell.style.verticalAlign = 'middle';
+                        nameCell.textContent = row.name;
+                    dataRow.appendChild(nameCell);
+                        
+                        const carCell = document.createElement('td');
+                        carCell.className = 'car-number';
+                    carCell.style.height = '18px';
+                    carCell.style.maxHeight = '18px';
+                    carCell.style.minHeight = '18px';
+                    carCell.style.lineHeight = '18px';
+                    carCell.style.padding = '0px 3px';
+                    carCell.style.margin = '0px';
+                    carCell.style.boxSizing = 'content-box';
+                    carCell.style.fontSize = '14px';
+                    carCell.style.overflow = 'hidden';
+                    carCell.style.verticalAlign = 'middle';
+                        carCell.textContent = row.carNumber;
+                    dataRow.appendChild(carCell);
+                        
+                    tbody.appendChild(dataRow);
+                    
+                    if (isNewGroup && !isFirstTime) {
+                            prevInitial = initial;
+                        }
+                });
+                
+                table.appendChild(thead);
+                table.appendChild(tbody);
+                container.appendChild(table);
+            }
+            
+            // 테이블 생성 후 그리드 크기 조정 및 텍스트 오버플로우 처리
+            // DOM 렌더링 완료 후 실행
+            setTimeout(() => {
+                adjustTableCells();
+                // 다시 한번 높이 고정 (폰트 크기 조정 후 리플로우 방지)
+                setTimeout(() => {
+                    fixAllHeights();
+                }, 50);
+            }, 100);
+        }
+        
+        // 모든 높이를 강제로 고정하는 함수
+        function fixAllHeights() {
+            const tables = document.querySelectorAll('#tablesContainer table');
+            tables.forEach(table => {
+                // 모든 행 높이 고정
+                const allRows = table.querySelectorAll('tbody tr');
+                allRows.forEach(row => {
+                    row.style.height = '20px';
+                    row.style.maxHeight = '20px';
+                    row.style.minHeight = '20px';
+                    row.style.lineHeight = '18px';
+                });
+                
+                // 모든 셀 높이 고정
+                const allCells = table.querySelectorAll('tbody td');
+                allCells.forEach(cell => {
+                    cell.style.height = '18px';
+                    cell.style.maxHeight = '18px';
+                    cell.style.minHeight = '18px';
+                    cell.style.lineHeight = '18px';
+                    cell.style.padding = '0px 3px';
+                    cell.style.margin = '0px';
+                    cell.style.boxSizing = 'content-box';
+                    cell.style.overflow = 'hidden';
+                    cell.style.verticalAlign = 'middle';
+                });
+            });
+        }
+        
+        // 셀의 텍스트가 넘치면 폰트 크기를 조정하는 함수
+        function adjustTableCells() {
+            const tables = document.querySelectorAll('#tablesContainer table');
+            tables.forEach(table => {
+                // 모든 행의 높이를 먼저 고정
+                const allRows = table.querySelectorAll('tbody tr');
+                allRows.forEach(row => {
+                    row.style.height = '20px';
+                    row.style.maxHeight = '20px';
+                    row.style.minHeight = '20px';
+                    row.style.lineHeight = '18px';
+                });
+                
+                // 각 테이블의 열 너비를 동일하게 설정
+                const rows = table.querySelectorAll('tbody tr');
+                let firstNormalRow = null;
+                for (let row of rows) {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length === 2 && !cells[0].hasAttribute('colspan')) {
+                        firstNormalRow = cells;
+                        break;
+                    }
+                }
+                
+                if (firstNormalRow && firstNormalRow.length === 2) {
+                    const nameWidth = '40%';
+                    const carWidth = '60%';
+                    
+                    // 성함 열 (첫 번째 열)
+                    const nameCells = table.querySelectorAll('tbody tr td:first-child');
+                    nameCells.forEach(c => {
+                        if (!c.hasAttribute('colspan')) {
+                            c.style.width = nameWidth;
+                        }
+                    });
+                    const nameHeader = table.querySelector('thead th:first-child');
+                    if (nameHeader) {
+                        nameHeader.style.width = nameWidth;
+                    }
+                    
+                    // 차량번호 열 (두 번째 열)
+                    const carCells = table.querySelectorAll('tbody tr td:last-child');
+                    carCells.forEach(c => {
+                        if (!c.hasAttribute('colspan')) {
+                            c.style.width = carWidth;
+                        }
+                    });
+                    const carHeader = table.querySelector('thead th:last-child');
+                    if (carHeader) {
+                        carHeader.style.width = carWidth;
+                    }
+                }
+                
+                // 모든 셀의 텍스트 오버플로우 처리
+                const cells = table.querySelectorAll('td');
+                cells.forEach(cell => {
+                    // 모든 셀에 기본 높이 설정 (초성 셀 포함)
+                    cell.style.height = '18px';
+                    cell.style.maxHeight = '18px';
+                    cell.style.minHeight = '18px';
+                    cell.style.lineHeight = '18px';
+                    cell.style.padding = '0px 3px';
+                    cell.style.margin = '0px';
+                    cell.style.boxSizing = 'content-box';
+                    cell.style.overflow = 'hidden';
+                    cell.style.whiteSpace = 'nowrap';
+                    cell.style.textOverflow = 'clip';
+                    cell.style.verticalAlign = 'middle';
+                    cell.style.display = 'table-cell';
+                    
+                    // 초성 셀(colspan="2")은 폰트 크기 조정 제외
+                    if (cell.hasAttribute('colspan')) {
+                        return;
+                    }
+                    
+                    // 데이터 셀만 폰트 크기 조정
+                    
+                    const originalFontSize = 14;
+                    let fontSize = originalFontSize;
+                    cell.style.fontSize = fontSize + 'px';
+                    
+                    // 셀의 실제 너비와 스크롤 너비를 비교하여 글자 크기 조정
+                    let attempts = 0;
+                    const maxAttempts = 50;
+                    while (cell.scrollWidth > cell.clientWidth && fontSize > 8 && attempts < maxAttempts) {
+                        fontSize -= 0.3;
+                        cell.style.fontSize = fontSize + 'px';
+                        attempts++;
+                    }
+                    
+                    // 최소 크기 보장
+                    if (fontSize < 8) {
+                        cell.style.fontSize = '8px';
+                    }
+                    
+                    // 폰트 크기 조정 후 다시 높이 고정 (중요!)
+                    cell.style.height = '18px';
+                    cell.style.lineHeight = '18px';
+                });
+            });
+        }
+
+        // 페이지 로드 시 오늘 날짜를 기본값으로 설정
+        window.onload = function() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+        };
+
+        // CSV 파일 로드 함수
+        function loadCSV() {
+            const fileInput = document.getElementById('csvFileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('CSV 파일을 선택해주세요.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const text = e.target.result;
+                    const data = parseCSV(text);
+                    
+                    if (data.length === 0) {
+                        alert('CSV 파일에서 데이터를 읽을 수 없습니다.');
+                        return;
+                    }
+                    
+                    const groups = groupByInitial(data);
+                    generateTables(groups);
+                    
+                    // 날짜 업데이트 (사용자가 입력한 날짜 또는 오늘 날짜)
+                    const dateInput = document.getElementById('dateInput');
+                    let dateStr;
+                    if (dateInput.value) {
+                        // 사용자가 입력한 날짜 사용 (YYYY-MM-DD 형식을 YYYY. MM. DD로 변환)
+                        const dateParts = dateInput.value.split('-');
+                        dateStr = `${dateParts[0]}. ${dateParts[1]}. ${dateParts[2]}`;
+                    } else {
+                        // 기본값: 오늘 날짜
+                        const today = new Date();
+                        dateStr = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${String(today.getDate()).padStart(2, '0')}`;
+                    }
+                    document.getElementById('dateSection').textContent = dateStr;
+                    // 인쇄용 흰색 텍스트도 업데이트
+                    document.getElementById('printDateSpacer').textContent = dateStr;
+                    
+                } catch (error) {
+                    alert('CSV 파일 처리 중 오류가 발생했습니다: ' + error.message);
+                    console.error(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                alert('파일 읽기 중 오류가 발생했습니다.');
+            };
+            
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        // 인쇄 전 안내 메시지
+        window.addEventListener('beforeprint', function() {
+            // 브라우저 인쇄 설정에서 헤더/푸터를 끄는 방법 안내
+            console.log('인쇄 팁: 브라우저 인쇄 설정에서 "머리글 및 바닥글"을 "없음"으로 설정하면 상단의 파일 경로가 사라집니다.');
+        });
+    </script>
+</body>
+</html>

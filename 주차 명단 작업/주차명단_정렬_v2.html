@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주차 등록 대상자 명단</title>
+    <style>
+        :root {
+            /* 레이아웃/가독성 기본값(화면) */
+            --cols: 4;
+            --row-h: 20px;
+            --fs: 14px;
+            --fs-initial: 16px;
+            --pad-x: 3px;
+
+            /* 색/선(깔끔하게 톤다운) */
+            --ink: #111;
+            --grid: rgba(17, 17, 17, 0.75);
+            --grid-soft: rgba(17, 17, 17, 0.45);
+            --zebra: #fafafa;
+            --initial-bg: #f2f3f5;
+
+            /* 인쇄 전용(“1장 고정” 안전값) */
+            --print-margin-y: 7mm;
+            --print-margin-x: 7mm;
+            --print-row-h: 5mm;        /* JS로 필요하면 조정 */
+            --print-fs: 11pt;          /* JS로 필요하면 조정 */
+            --print-fs-initial: 12pt;  /* JS로 필요하면 조정 */
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', '맑은 고딕', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+            padding: 10px;
+            color: var(--ink);
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 210mm;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin: 0 0 12px 0;
+        }
+        
+        h1 {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+            margin: 0 0 4px 0;
+        }
+        
+        .date {
+            font-size: 18px;
+            margin: 2px 0 0 0;
+            color: rgba(17, 17, 17, 0.85);
+        }
+        
+        .notice {
+            margin: 8px 0 0 0;
+        }
+        
+        .notice p {
+            margin: 3px 0;
+            font-size: 13px;
+            text-align: center;
+            color: rgba(17, 17, 17, 0.78);
+        }
+        
+        .highlight {
+            color: #c01818;
+            font-weight: 800;
+        }
+        
+        .file-input-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 0 0 14px 0;
+            padding: 10px 12px;
+            border: 1px solid rgba(17, 17, 17, 0.12);
+            border-radius: 10px;
+            background: #fbfbfc;
+        }
+        
+        .file-input-container input[type="file"],
+        .file-input-container input[type="date"] {
+            margin: 0;
+            padding: 6px 8px;
+        }
+        
+        .file-input-container button {
+            padding: 8px 14px;
+            font-size: 14px;
+            background-color: #111;
+            color: #fff;
+            border: 1px solid #111;
+            border-radius: 9px;
+            cursor: pointer;
+        }
+        
+        .file-input-container button:hover {
+            opacity: 0.92;
+        }
+
+        .print-tip {
+            width: 100%;
+            text-align: center;
+            font-size: 12px;
+            color: rgba(17, 17, 17, 0.65);
+        }
+        
+        .tables-container {
+            display: grid;
+            grid-template-columns: repeat(var(--cols), 1fr);
+            width: 100%;
+            border: 1.2px solid var(--grid);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .column {
+            display: block;
+            border-left: 0.7px solid var(--grid-soft);
+            vertical-align: top;
+            min-width: 0;
+        }
+        
+        .column:first-child {
+            border-left: none;
+        }
+        
+        .cell {
+            height: var(--row-h);
+            border-bottom: 0.7px solid var(--grid-soft);
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            line-height: var(--row-h);
+        }
+
+        .cell:last-child {
+            border-bottom: none;
+        }
+        
+        .cell-header {
+            background-color: var(--initial-bg);
+            font-weight: 900;
+            font-size: var(--fs-initial);
+            justify-content: center;
+            letter-spacing: 0.2px;
+        }
+        
+        .cell-data {
+            background-color: #fff;
+            font-size: var(--fs);
+        }
+        
+        .cell-data:nth-child(even) {
+            background-color: var(--zebra);
+        }
+        
+        .name-part {
+            width: 40%;
+            height: 100%;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 var(--pad-x);
+            box-sizing: border-box;
+            font-weight: 700;
+        }
+        
+        .car-part {
+            width: 60%;
+            height: 100%;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
+            flex-shrink: 0;
+            border-left: 0.7px solid var(--grid-soft);
+            display: flex;
+            align-items: center;
+            padding: 0 var(--pad-x);
+            box-sizing: border-box;
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: "tnum";
+            font-family: 'Consolas', 'Cascadia Mono', 'Roboto Mono', ui-monospace, monospace;
+            letter-spacing: 0.2px;
+        }
+        
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+            
+            .file-input-container {
+                display: none !important;
+            }
+
+            .print-tip {
+                display: none !important;
+            }
+            
+            body {
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 210mm !important;
+            }
+            
+            .container {
+                max-width: 210mm !important;
+                width: 210mm !important;
+                margin: 0 auto !important;
+            }
+            
+            .header {
+                text-align: center !important;
+                margin-bottom: 10px !important;
+            }
+            
+            h1 {
+                font-size: 22pt !important;
+                font-weight: 900 !important;
+            }
+            
+            .date {
+                font-size: 14pt !important;
+            }
+            
+            .notice p {
+                font-size: 10.5pt !important;
+            }
+            
+            .highlight {
+                color: #c01818 !important;
+                font-weight: 900 !important;
+            }
+            
+            .tables-container {
+                display: grid !important;
+                width: 100% !important;
+                border: 1.2px solid var(--grid) !important;
+            }
+            
+            .column {
+                display: block !important;
+                border-left: 0.7px solid var(--grid-soft) !important;
+                vertical-align: top !important;
+            }
+            
+            .column:first-child {
+                border-left: none !important;
+            }
+            
+            .cell {
+                height: var(--print-row-h) !important;
+                border-bottom: 0.7px solid var(--grid-soft) !important;
+                display: flex !important;
+                align-items: center !important;
+                box-sizing: border-box !important;
+                page-break-inside: avoid !important;
+                overflow: hidden !important;
+                line-height: var(--print-row-h) !important;
+            }
+            
+            .cell-header {
+                background-color: var(--initial-bg) !important;
+                font-weight: 900 !important;
+                font-size: var(--print-fs-initial) !important;
+                justify-content: center !important;
+                padding: 0 var(--pad-x) !important;
+            }
+            
+            .cell-data {
+                background-color: #fff !important;
+                font-size: var(--print-fs) !important;
+                padding: 0 !important;
+            }
+            
+            .cell-data:nth-child(even) {
+                background-color: var(--zebra) !important;
+            }
+            
+            .name-part {
+                width: 40% !important;
+                height: 100% !important;
+                text-align: center !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                padding: 0 var(--pad-x) !important;
+                box-sizing: border-box !important;
+                overflow: hidden !important;
+                font-weight: 800 !important;
+            }
+            
+            .car-part {
+                width: 60% !important;
+                height: 100% !important;
+                text-align: left !important;
+                border-left: 0.7px solid var(--grid-soft) !important;
+                display: flex !important;
+                align-items: center !important;
+                padding: 0 var(--pad-x) !important;
+                box-sizing: border-box !important;
+                overflow: hidden !important;
+                font-family: 'Consolas', 'Cascadia Mono', 'Roboto Mono', ui-monospace, monospace !important;
+            }
+            
+            @page {
+                size: A4 portrait;
+                margin: var(--print-margin-y) var(--print-margin-x);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="file-input-container">
+            <input type="file" id="csvFileInput" accept=".csv" />
+            <label for="dateInput">날짜:</label>
+            <input type="date" id="dateInput" />
+            <button onclick="loadCSV()">CSV 파일로 명단 생성</button>
+            <div class="print-tip">인쇄 시 하단 경로가 보이면: <b>추가 설정 → 머리글 및 바닥글 끄기</b></div>
+        </div>
+        
+        <div class="header" id="headerSection" style="display: none;">
+            <h1>주차 등록 대상자 명단</h1>
+            <div class="date" id="dateSection"></div>
+            <div class="notice">
+                <p class="highlight">* 명단에 없는 등록교인분들은 안내봉사팀에 문의해 주세요.</p>
+                <p>명단에 있는 분들은 별도로 QR 찍지 않아도 무료주차등록(3시간)이 적용됩니다.</p>
+            </div>
+        </div>
+        
+        <div class="tables-container" id="tablesContainer"></div>
+    </div>
+
+    <script>
+        // 초성 추출 함수
+        function getInitialConsonant(name) {
+            if (!name || name.length === 0) return '기타';
+            
+            const firstChar = name[0];
+            if ('가' <= firstChar && firstChar <= '힣') {
+                const code = firstChar.charCodeAt(0) - 0xAC00;
+                const initialIndex = Math.floor(code / 588);
+                const initials = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+                return initials[initialIndex] || firstChar;
+            }
+            return firstChar;
+        }
+
+        // CSV 파싱
+        function parseCSV(text) {
+            if (text.charCodeAt(0) === 0xFEFF) {
+                text = text.slice(1);
+            }
+            
+            const lines = text.split(/\r?\n/).filter(line => line.trim());
+            if (lines.length === 0) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                
+                if (row['성함'] && row['차량번호']) {
+                    data.push({
+                        name: row['성함'].trim(),
+                        carNumber: row['차량번호'].trim()
+                    });
+                }
+            }
+            return data;
+        }
+
+        // 초성별 그룹화
+        function groupByInitial(data) {
+            const groups = {};
+            data.forEach(item => {
+                const initial = getInitialConsonant(item.name);
+                if (!groups[initial]) {
+                    groups[initial] = [];
+                }
+                groups[initial].push(item);
+            });
+            
+            const initialOrder = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+            const sortedGroups = {};
+            initialOrder.forEach(initial => {
+                if (groups[initial]) {
+                    sortedGroups[initial] = groups[initial].sort((a, b) => a.name.localeCompare(b.name));
+                }
+            });
+            
+            return sortedGroups;
+        }
+
+        // 테이블 생성
+        function generateTables(groups) {
+            const container = document.getElementById('tablesContainer');
+            container.innerHTML = '';
+            
+            document.getElementById('headerSection').style.display = 'block';
+            
+            // 모든 데이터를 하나의 배열로 변환
+            const allRows = [];
+            const displayedInitials = new Set();
+            
+            Object.keys(groups).forEach(initial => {
+                groups[initial].forEach((item, index) => {
+                    if (index === 0 && !displayedInitials.has(initial)) {
+                        allRows.push({
+                            type: 'header',
+                            initial: initial
+                        });
+                        displayedInitials.add(initial);
+                    }
+                    allRows.push({
+                        type: 'data',
+                        name: item.name,
+                        carNumber: item.carNumber
+                    });
+                });
+            });
+            
+            // ====== A4 1장 보장용 자동 설정 ======
+            // 안전 기준(대략): 인쇄 시 한 컬럼에 52줄 내외면 1장에 들어옴(헤더/안내 포함)
+            const MAX_PRINT_ROWS_PER_COL = 52;
+            const MIN_COLS = 4;
+            const MAX_COLS = 5; // 너무 늘리면 폭이 좁아져 가독성↓ (최대 5로 제한)
+
+            let numColumns = MIN_COLS;
+            while (numColumns < MAX_COLS && Math.ceil(allRows.length / numColumns) > MAX_PRINT_ROWS_PER_COL) {
+                numColumns += 1;
+            }
+
+            // 그래도 줄 수가 많으면(아주 많은 데이터), 인쇄용 행높이/폰트를 살짝만 줄여서 1장에 억지로 맞춤
+            // (가독성 하한: 10pt, 행높이 4.6mm)
+            const rowsPerColumnCandidate = Math.ceil(allRows.length / numColumns);
+            if (rowsPerColumnCandidate > MAX_PRINT_ROWS_PER_COL) {
+                document.documentElement.style.setProperty('--print-row-h', '4.6mm');
+                document.documentElement.style.setProperty('--print-fs', '10pt');
+                document.documentElement.style.setProperty('--print-fs-initial', '11pt');
+            } else {
+                // 기본값 유지(혹시 이전 실행에서 바뀐 값이 남아있을 수 있어 리셋)
+                document.documentElement.style.setProperty('--print-row-h', '5mm');
+                document.documentElement.style.setProperty('--print-fs', '11pt');
+                document.documentElement.style.setProperty('--print-fs-initial', '12pt');
+            }
+
+            // 실제 컬럼 수 적용(CSS Grid)
+            document.documentElement.style.setProperty('--cols', String(numColumns));
+
+            const rowsPerColumn = Math.ceil(allRows.length / numColumns);
+            
+            for (let colIdx = 0; colIdx < numColumns; colIdx++) {
+                const startIdx = colIdx * rowsPerColumn;
+                const endIdx = Math.min((colIdx + 1) * rowsPerColumn, allRows.length);
+                const columnRows = allRows.slice(startIdx, endIdx);
+                
+                const column = document.createElement('div');
+                column.className = 'column';
+                
+                columnRows.forEach(row => {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    
+                    if (row.type === 'header') {
+                        cell.classList.add('cell-header');
+                        cell.textContent = row.initial;
+                    } else {
+                        cell.classList.add('cell-data');
+                        
+                        const namePart = document.createElement('div');
+                        namePart.className = 'name-part';
+                        namePart.textContent = row.name;
+                        
+                        const carPart = document.createElement('div');
+                        carPart.className = 'car-part';
+                        carPart.textContent = row.carNumber;
+                        
+                        cell.appendChild(namePart);
+                        cell.appendChild(carPart);
+                        
+                        // 폰트 크기 자동 조정
+                        adjustFontSize(namePart);
+                        adjustFontSize(carPart);
+                    }
+                    
+                    column.appendChild(cell);
+                });
+                
+                container.appendChild(column);
+            }
+        }
+        
+        // 폰트 크기 자동 조정
+        function adjustFontSize(element) {
+            const computed = window.getComputedStyle(element);
+            let fontSize = parseFloat(computed.fontSize) || 14;
+            element.style.fontSize = fontSize + 'px';
+            
+            let attempts = 0;
+            const minFontSize = 10; // 가독성 하한
+            while (element.scrollWidth > element.clientWidth && fontSize > minFontSize && attempts < 50) {
+                fontSize -= 0.3;
+                element.style.fontSize = fontSize + 'px';
+                attempts++;
+            }
+        }
+
+        // 페이지 로드 시 오늘 날짜 설정
+        window.onload = function() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+        };
+
+        // CSV 파일 로드
+        function loadCSV() {
+            const fileInput = document.getElementById('csvFileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('CSV 파일을 선택해주세요.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const text = e.target.result;
+                    const data = parseCSV(text);
+                    
+                    if (data.length === 0) {
+                        alert('CSV 파일에서 데이터를 읽을 수 없습니다.');
+                        return;
+                    }
+                    
+                    const groups = groupByInitial(data);
+                    generateTables(groups);
+                    
+                    // 날짜 업데이트
+                    const dateInput = document.getElementById('dateInput');
+                    let dateStr;
+                    if (dateInput.value) {
+                        const dateParts = dateInput.value.split('-');
+                        dateStr = `${dateParts[0]}. ${dateParts[1]}. ${dateParts[2]}`;
+                    } else {
+                        const today = new Date();
+                        dateStr = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${String(today.getDate()).padStart(2, '0')}`;
+                    }
+                    document.getElementById('dateSection').textContent = dateStr;
+                    
+                } catch (error) {
+                    alert('CSV 파일 처리 중 오류가 발생했습니다: ' + error.message);
+                    console.error(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                alert('파일 읽기 중 오류가 발생했습니다.');
+            };
+            
+            reader.readAsText(file, 'UTF-8');
+        }
+    </script>
+</body>
+</html>

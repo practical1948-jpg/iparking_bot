@@ -1,0 +1,1 @@
+print(f"{car_number} - 미입차(veo) 처리됨 (입차확인:{now_str}, 실입차:{entry_time})") 

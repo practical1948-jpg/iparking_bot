@@ -1,0 +1,1212 @@
+# 크롬 브라우저에서 멤버스 상점 할인 적용 자동화 스크립트
+# & "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chrome_debug_temp"
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from datetime import datetime, timedelta
+import re
+import time
+import subprocess
+import os
+import socket
+import csv
+import pandas as pd
+from pathlib import Path
+import glob
+import json
+
+
+
+# 계정 정보
+ACCOUNTS = [
+    {"username": "dreamcb01", "password": "dreamcb01"},
+    {"username": "dreamcb02", "password": "dreamcb02"},
+    {"username": "dreamcb03", "password": "dreamcb03"}
+]
+
+# 주차 DB 파일 전용 폴더 경로
+BASE_DIR = r"C:\Users\myc43\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\바탕 화면\업무 자료\dev\iparking-bot"
+DB_FOLDER = os.path.join(BASE_DIR, "주차_DB_파일")
+EXECUTION_LOG_PATH = os.path.join(BASE_DIR, "file_execution_log.json")
+
+# 주차 DB 폴더 생성 (없으면)
+os.makedirs(DB_FOLDER, exist_ok=True)
+
+def get_current_round():
+    """오늘 날짜 기준 실행 회차 결정"""
+    try:
+        if os.path.exists(EXECUTION_LOG_PATH):
+            with open(EXECUTION_LOG_PATH, 'r', encoding='utf-8') as f:
+                log_data = json.load(f)
+        else:
+            return 1
+        
+        # 오늘 날짜
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # 오늘 실행 기록 카운트
+        today_count = 0
+        for file_info in log_data.get("execution_history", {}).values():
+            last_exec = file_info.get("last_executed", "")
+            if last_exec.startswith(today):
+                today_count += 1
+        
+        return today_count + 1  # 다음 회차
+    except Exception as e:
+        print(f"회차 계산 오류: {e}")
+        return 1
+
+def log_file_execution(file_path):
+    """파일 실행 이력을 로그에 기록"""
+    try:
+        # 로그 파일 읽기
+        if os.path.exists(EXECUTION_LOG_PATH):
+            with open(EXECUTION_LOG_PATH, 'r', encoding='utf-8') as f:
+                log_data = json.load(f)
+        else:
+            log_data = {"execution_history": {}}
+        
+        # 실행 기록 추가
+        file_name = os.path.basename(file_path)
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        if file_name not in log_data["execution_history"]:
+            log_data["execution_history"][file_name] = {
+                "last_executed": current_time,
+                "execution_count": 1,
+                "file_path": file_path
+            }
+        else:
+            log_data["execution_history"][file_name]["last_executed"] = current_time
+            log_data["execution_history"][file_name]["execution_count"] += 1
+            log_data["execution_history"][file_name]["file_path"] = file_path
+        
+        # 로그 저장
+        with open(EXECUTION_LOG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(log_data, f, ensure_ascii=False, indent=2)
+        
+        print(f"📝 파일 실행 기록: {file_name}")
+    except Exception as e:
+        print(f"⚠️ 로그 기록 실패: {e}")
+
+def get_latest_db_file():
+    """주차_DB_파일 폴더에서 가장 최근 CSV 파일을 찾음"""
+    try:
+        # 폴더 내 모든 CSV 파일 검색
+        csv_files = glob.glob(os.path.join(DB_FOLDER, "*.csv"))
+        
+        if not csv_files:
+            return None
+        
+        # 수정 시간 기준으로 정렬 (최신 순)
+        latest_file = max(csv_files, key=os.path.getmtime)
+        return latest_file
+    except Exception as e:
+        print(f"최신 파일 검색 오류: {e}")
+        return None
+
+# CSV 파일 경로 옵션 (기본 경로, 파일이 없으면 선택 가능)
+CSV_FILES = {
+    "1": {
+        "name": "차량_DB (대량 등록용)",
+        "path": get_latest_db_file() or r"C:\Users\myc43\Downloads\(신규)주차등록(응답) - 차량_DB 시트 (9).csv",
+        "default_dir": DB_FOLDER  # 주차_DB_파일 폴더를 기본으로
+    },
+    "2": {
+        "name": "설문지 응답 (일일 실시간 등록용)",
+        "path": r"C:\Users\myc43\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\바탕 화면\업무 자료\dev\iparking-bot\(신규)주차등록(응답) - 설문지 응답 시트1.csv",
+        "default_dir": BASE_DIR
+    }
+}
+
+def select_csv_file(default_path="", default_dir=""):
+    """파일 선택 대화상자로 CSV 파일 선택"""
+    try:
+        from tkinter import Tk, filedialog
+        
+        # Tkinter 루트 윈도우 생성 (숨김)
+        root = Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        print("\n파일 선택 대화상자가 열립니다...")
+        
+        # 파일 선택 대화상자
+        file_path = filedialog.askopenfilename(
+            title="CSV 파일을 선택하세요",
+            initialdir=default_dir if default_dir else os.path.dirname(default_path) if default_path else os.getcwd(),
+            filetypes=[
+                ("CSV 파일", "*.csv"),
+                ("모든 파일", "*.*")
+            ]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            print(f"선택된 파일: {file_path}")
+            return file_path
+        else:
+            print("파일 선택이 취소되었습니다.")
+            return None
+            
+    except ImportError:
+        print("⚠️ tkinter를 사용할 수 없습니다. 수동으로 경로를 입력하세요.")
+        file_path = input("CSV 파일 전체 경로를 입력하세요: ").strip().strip('"')
+        if os.path.exists(file_path):
+            return file_path
+        else:
+            print("파일을 찾을 수 없습니다.")
+            return None
+    except Exception as e:
+        print(f"파일 선택 오류: {e}")
+        return None
+
+# 선택된 CSV 파일 경로 (프로그램 시작 시 설정됨)
+CSV_FILE_PATH = None
+
+# 데이터 입력 모드 ('csv' 또는 'manual')
+INPUT_MODE = None
+
+# 수동 입력 데이터 저장
+MANUAL_DATA = []
+
+# iParking 로그인 함수
+def login_to_iparking(driver, username, password):
+    """iParking 사이트에 로그인"""
+    wait = WebDriverWait(driver, 10)
+    try:
+        # 아이디 입력
+        id_input = wait.until(EC.presence_of_element_located((By.ID, "id")))
+        id_input.clear()
+        id_input.send_keys(username)
+        
+        # 비밀번호 입력
+        pw_input = driver.find_element(By.ID, "password")
+        pw_input.clear()
+        pw_input.send_keys(password)
+        
+        # 로그인 버튼 클릭 (여러 가능한 선택자 시도)
+        try:
+            login_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            login_btn.click()
+        except:
+            try:
+                login_btn = driver.find_element(By.XPATH, "//button[contains(text(), '로그인')]")
+                login_btn.click()
+            except:
+                # Enter 키로 로그인 시도
+                pw_input.send_keys('\n')
+        
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"    로그인 실패: {e}")
+        return False
+
+# 차량번호 정규화 함수 (한글, 숫자만 남김)
+def normalize_car_number(car_number):
+    return re.sub(r'[^가-힣0-9]', '', car_number)
+
+# 수동 입력 데이터를 일일 주차 CSV에 추가
+def save_manual_input_to_csv():
+    """수동 입력 데이터를 일일 주차 CSV 파일에 추가"""
+    global MANUAL_DATA, CSV_FILE_PATH
+    
+    if not MANUAL_DATA:
+        return
+    
+    # 일일 주차 CSV 파일 경로 사용
+    daily_csv_path = CSV_FILES["2"]["path"]
+    
+    try:
+        # 기존 CSV 파일 읽기
+        if os.path.exists(daily_csv_path):
+            df = pd.read_csv(daily_csv_path, encoding='utf-8-sig')
+            df.columns = df.columns.str.replace('\n', ' ').str.strip()
+        else:
+            # 파일이 없으면 새로 생성
+            df = pd.DataFrame(columns=['타임스탬프', '이름', '차량번호', '상태', '처리시간'])
+        
+        # 수동 입력 데이터 추가
+        current_time = datetime.now().strftime('%Y. %m. %d 오후 %H:%M:%S')
+        
+        for name, car_number in MANUAL_DATA:
+            # 이미 존재하는 차량번호인지 확인
+            existing = df[df['차량번호'].str.replace(' ', '', regex=False) == car_number.replace(' ', '')]
+            if len(existing) == 0:
+                # 새 행 추가
+                new_row = {
+                    '타임스탬프': current_time,
+                    '이름': name,
+                    '차량번호': car_number,
+                    '상태': '미등록',
+                    '처리시간': ''
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        
+        # CSV 파일 저장
+        df.to_csv(daily_csv_path, index=False, encoding='utf-8-sig')
+        print(f"수동 입력 데이터를 일일 주차 CSV에 저장했습니다: {len(MANUAL_DATA)}개")
+        
+    except Exception as e:
+        print(f"수동 입력 데이터 저장 실패: {e}")
+
+# 수동 입력 데이터 읽기
+def read_manual_input():
+    """수동으로 입력된 차량 정보를 DataFrame으로 변환"""
+    global MANUAL_DATA
+    
+    if not MANUAL_DATA:
+        return None
+    
+    # DataFrame 생성
+    df = pd.DataFrame(MANUAL_DATA, columns=['이름', '차량번호'])
+    df['상태'] = '미등록'
+    df['처리시간'] = ''
+    
+    return df
+
+# CSV 파일에서 차량 정보 읽기
+def read_car_data_from_csv():
+    """CSV 파일에서 차량번호 및 상태 정보 읽기"""
+    try:
+        # CSV 파일 읽기 (헤더가 2줄인 경우 처리)
+        df = pd.read_csv(CSV_FILE_PATH, encoding='utf-8-sig')
+        
+        # 첫 번째 행이 예시인 경우 제거 (예시) 103가3456 같은 텍스트 포함)
+        if len(df) > 0 and '예시' in str(df.iloc[0].values):
+            df = df.iloc[1:].reset_index(drop=True)
+        
+        # 열 이름 정규화 (줄바꿈 제거)
+        df.columns = df.columns.str.replace('\n', ' ').str.strip()
+        
+        # 차량번호 열 찾기 (다양한 이름 지원)
+        car_number_col = None
+        for col in df.columns:
+            if '차량번호' in col or '차량' in col:
+                car_number_col = col
+                break
+        
+        if car_number_col:
+            df.rename(columns={car_number_col: '차량번호'}, inplace=True)
+        
+        # 상태, 처리시간, 회차 열이 없으면 추가
+        if '상태' not in df.columns:
+            df['상태'] = '미등록'
+        if '처리시간' not in df.columns:
+            df['처리시간'] = ''
+        if '회차' not in df.columns:
+            df['회차'] = ''
+        
+        # 변경사항을 파일에 저장 (열 추가된 경우)
+        df.to_csv(CSV_FILE_PATH, index=False, encoding='utf-8-sig')
+        
+        return df
+    except Exception as e:
+        print(f"CSV 파일 읽기 실패: {e}")
+        return None
+
+# CSV 파일 업데이트
+def update_csv_status(index, status, timestamp=None, car_number=None, round_num=None):
+    """CSV 파일의 특정 행 상태 업데이트"""
+    # 수동 입력 모드면 일일 주차 CSV 사용
+    if INPUT_MODE == 'manual':
+        csv_path = CSV_FILES["2"]["path"]  # 일일 주차 CSV
+    else:
+        csv_path = CSV_FILE_PATH
+    
+    if not csv_path:
+        return True
+    
+    try:
+        df = pd.read_csv(csv_path, encoding='utf-8-sig')
+        
+        # 열 이름 정규화
+        df.columns = df.columns.str.replace('\n', ' ').str.strip()
+        
+        # 차량번호 열 찾기
+        car_number_col = None
+        for col in df.columns:
+            if '차량번호' in col or '차량' in col:
+                car_number_col = col
+                break
+        if car_number_col:
+            df.rename(columns={car_number_col: '차량번호'}, inplace=True)
+        
+        # 상태, 처리시간, 회차 열이 없으면 추가
+        if '상태' not in df.columns:
+            df['상태'] = '미등록'
+        if '처리시간' not in df.columns:
+            df['처리시간'] = ''
+        if '회차' not in df.columns:
+            df['회차'] = ''
+        
+        # 수동 입력 모드면 차량번호로 찾기
+        if INPUT_MODE == 'manual' and car_number:
+            # 차량번호로 행 찾기
+            car_normalized = normalize_car_number(car_number)
+            mask = df['차량번호'].apply(lambda x: normalize_car_number(str(x)) == car_normalized)
+            if mask.any():
+                df.loc[mask, '상태'] = status
+                if timestamp:
+                    df.loc[mask, '처리시간'] = timestamp
+                # 일일 등록은 회차 기록 안함
+            else:
+                print(f"  경고: 차량번호 {car_number}를 CSV에서 찾을 수 없습니다.")
+        else:
+            # 일반 모드: 인덱스로 업데이트
+            df.loc[index, '상태'] = status
+            if timestamp:
+                df.loc[index, '처리시간'] = timestamp
+            if round_num and INPUT_MODE == 'csv':  # CSV 모드만 회차 기록
+                df.loc[index, '회차'] = round_num
+        
+        df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+        return True
+    except Exception as e:
+        print(f"CSV 업데이트 실패: {e}")
+        return False
+
+# 세션 복구 함수
+def recover_session(driver, handles):
+    """세션 만료 시 자동으로 재로그인 및 복구"""
+    print("\n" + "="*60)
+    print("🔄 세션 자동 복구 시작")
+    print("="*60)
+    
+    # 모든 탭 새로고침 및 재로그인
+    print("\n모든 탭을 새로고침하고 재로그인합니다...")
+    success_count = 0
+    
+    for idx, handle in enumerate(handles[:3]):  # 3개 계정 탭만
+        try:
+            driver.switch_to.window(handle)
+            
+            # 새로고침
+            print(f"\n  [{idx+1}/3] 탭 {idx+1} 처리 중...")
+            driver.refresh()
+            time.sleep(2)
+            
+            # 현재 URL 확인
+            current_url = driver.current_url
+            
+            # 로그인 페이지인 경우에만 로그인
+            if 'login' in current_url:
+                print(f"    로그인 페이지 감지 - {ACCOUNTS[idx]['username']} 로그인 중...")
+                if login_to_iparking(driver, ACCOUNTS[idx]['username'], ACCOUNTS[idx]['password']):
+                    time.sleep(2)
+                    if 'login' not in driver.current_url:
+                        print(f"    ✅ 로그인 성공!")
+                        
+                        # 주차비 할인 메뉴로 이동
+                        try:
+                            discount_url = "http://members.iparking.co.kr/html/discount/carDiscount.html"
+                            driver.get(discount_url)
+                            time.sleep(2)
+                            print(f"    ✅ 주차비 할인 메뉴 이동 완료")
+                            success_count += 1
+                        except Exception as e:
+                            print(f"    ⚠️ 메뉴 이동 실패: {e}")
+                    else:
+                        print(f"    ❌ 로그인 실패")
+                else:
+                    print(f"    ❌ 로그인 실패")
+            else:
+                # 이미 로그인된 경우
+                print(f"    ✅ 이미 로그인됨 - 주차비 할인 메뉴로 이동")
+                try:
+                    discount_url = "http://members.iparking.co.kr/html/discount/carDiscount.html"
+                    driver.get(discount_url)
+                    time.sleep(2)
+                    success_count += 1
+                except Exception as e:
+                    print(f"    ⚠️ 메뉴 이동 실패: {e}")
+                    
+        except Exception as e:
+            print(f"    ❌ 탭 {idx+1} 복구 실패: {e}")
+    
+    print("\n" + "="*60)
+    print(f"✅ 세션 복구 완료: {success_count}/3개 탭 성공")
+    print("="*60 + "\n")
+    
+    if success_count == 0:
+        print("⚠️ 모든 탭 복구 실패! 수동으로 확인이 필요합니다.")
+        input("탭들을 확인하고 준비되면 Enter를 눌러주세요...")
+    
+    return success_count > 0
+
+# Alert/팝업 감지 함수
+def check_and_handle_alert(driver):
+    """Alert 팝업 감지 및 처리"""
+    try:
+        alert = driver.switch_to.alert
+        alert_text = alert.text
+        print(f"  ⚠️ [Alert 감지] {alert_text}")
+        
+        # 세션 만료 관련 키워드 체크
+        if any(keyword in alert_text for keyword in ['로그인', '세션', '만료', '인증', '접근']):
+            print(f"  ❌ 세션 만료 감지! 프로그램을 중단합니다.")
+            alert.accept()
+            return "session_expired"
+        
+        alert.accept()
+        return "alert_handled"
+    except:
+        return None
+
+# 주차권(할인권) 적용 함수
+def apply_discount(driver, car_number_full, return_home=True):
+    """
+    주차권 등록 함수
+    return_home=False이면 등록 후 홈으로 돌아가지 않음 (할인 내역 화면 유지)
+    """
+    wait = WebDriverWait(driver, 3)
+    
+    # Alert 체크
+    alert_result = check_and_handle_alert(driver)
+    if alert_result == "session_expired":
+        return "session_expired"
+    
+    try:
+        input_box = wait.until(EC.element_to_be_clickable((By.ID, "carNumber")))
+        input_box.clear()
+        last4 = car_number_full[-4:]
+        input_box.send_keys(last4)
+        driver.find_element(By.CLASS_NAME, "btn-search").click()
+        
+        # 검색 후 다시 Alert 체크
+        time.sleep(0.5)
+        alert_result = check_and_handle_alert(driver)
+        if alert_result == "session_expired":
+            return "session_expired"
+        # 검색 후 다시 Alert 체크
+        time.sleep(0.5)
+        alert_result = check_and_handle_alert(driver)
+        if alert_result == "session_expired":
+            return "session_expired"
+        
+        # 차량 없음 메시지
+        try:
+            no_result = wait.until(EC.presence_of_element_located((By.ID, "parkName")))
+            if "검색된 차량이 없습니다." in no_result.text:
+                try:
+                    home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                    home_btn_right.click()
+                except Exception:
+                    pass
+                return "no_car"
+        except Exception:
+            pass
+        results = driver.find_elements(By.CSS_SELECTOR, ".car-number-cell")
+        
+        # 만약 .car-number-cell로 못 찾으면 일반 td 태그로도 시도
+        if len(results) == 0:
+            results = driver.find_elements(By.TAG_NAME, "td")
+        
+        search_number = normalize_car_number(car_number_full)
+        found = False
+        partial_matches = []  # 뒷 4자리만 일치하는 경우들
+        
+        for result in results:
+            td_number = normalize_car_number(result.text)
+            if td_number == search_number:
+                # 전체 번호 완전 일치
+                result.click()
+                found = True
+                break
+            elif len(search_number) >= 4 and td_number[-4:] == search_number[-4:]:
+                # 뒷 4자리만 일치
+                partial_matches.append((result, td_number))
+        
+        if not found:
+            # 전체 일치하는 게 없을 때
+            if len(partial_matches) == 1:
+                # 검색 결과가 정확히 1개 → 자동 클릭
+                partial_matches[0][0].click()
+                found = True
+                print(f"    ℹ️ 뒷 4자리 일치 차량 1개 발견 → 자동 선택: {partial_matches[0][1]}")
+            elif len(partial_matches) > 1:
+                # 2개 이상 → 경고
+                print(f"    ⚠️ 뒷 4자리 일치 차량 {len(partial_matches)}개 발견 → 전체 번호 필요")
+                print(f"       발견된 차량: {', '.join([m[1] for m in partial_matches])}")
+                try:
+                    home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                    home_btn_right.click()
+                except Exception:
+                    pass
+                return "error_multiple"
+            else:
+                # 뒷 4자리도 안 맞음
+                try:
+                    home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                    home_btn_right.click()
+                except Exception:
+                    pass
+                return "no_car"
+        
+        # found == True인 경우 계속 진행
+        select_btn = wait.until(EC.element_to_be_clickable((By.ID, "next")))
+        select_btn.click()
+        apply_btn = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "btn-apply")))
+        apply_btn.click()
+        
+        # 팝업 처리 (단순하게)
+        try:
+            ok_btn = wait.until(EC.element_to_be_clickable((By.ID, "popupOk")))
+            ok_btn.click()
+            ok_btn2 = wait.until(EC.element_to_be_clickable((By.ID, "popupOk")))
+            ok_btn2.click()
+        except Exception:
+            pass
+            
+        # 홈으로 돌아가기 (return_home=True일 때만)
+        if return_home:
+            try:
+                home_btn = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                home_btn.click()
+            except Exception:
+                pass
+        
+        return "success"
+    except Exception as e:
+        # 예외 상황 분석
+        error_msg = str(e).lower()
+        
+        # TimeoutException: 요소를 못 찾은 경우 (세션 만료 가능성)
+        if "timeout" in error_msg or "element" in error_msg:
+            # Alert 다시 한번 체크
+            alert_result = check_and_handle_alert(driver)
+            if alert_result == "session_expired":
+                return "session_expired"
+            
+            # Alert 없으면 요소 찾기 실패 = 페이지 구조 문제
+            print(f"    [요소 찾기 실패] {e}")
+            try:
+                home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                home_btn_right.click()
+            except Exception:
+                pass
+            return "no_car"
+        
+        # 기타 예외
+        try:
+            home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+            home_btn_right.click()
+        except Exception:
+            pass
+        return "error"
+
+# 적용된 할인권 개수 확인 함수
+def check_applied_discounts(driver, wait):
+    """
+    '총 할인 내역 및 적용 수량' 이후에 나오는 <td>1시간(무료)</td> 개수를 확인
+    정확한 선택자로 추정 없이 실제 개수만 카운트
+    """
+    try:
+        time.sleep(3)  # 페이지 로딩 대기
+        
+        # "총 할인 내역 및 적용 수량" <p> 태그 이후에 나오는 <td>1시간(무료)</td> 찾기
+        try:
+            discount_items = driver.find_elements(By.XPATH, "//p[contains(text(), '총 할인 내역')]/following::td[text()='1시간(무료)']")
+            discount_count = len(discount_items)
+            
+            if discount_count > 0:
+                print(f"    [할인권 감지 ✓] '총 할인 내역' 이후 <td>1시간(무료)</td> {discount_count}개 발견")
+            else:
+                print(f"    [할인권 감지 ✗] <td>1시간(무료)</td> 요소를 찾을 수 없음")
+            
+            return discount_count
+            
+        except Exception as e:
+            print(f"    [할인권 감지 오류] {e}")
+            return 0
+        
+    except Exception as e:
+        print(f"    [할인권 확인 오류] {e}")
+        return 0
+
+def run_parking_automation():
+    """주차권 등록 자동화 실행 함수"""
+    print(f"\n=== iParking 자동화 실행 시작 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
+    
+    # 현재 회차 결정 (CSV 모드만)
+    current_round = None
+    if INPUT_MODE == 'csv':
+        current_round = get_current_round()
+        print(f"🔄 실행 회차: {current_round}")
+    
+    # 파일 실행 로그 기록
+    if CSV_FILE_PATH and os.path.exists(CSV_FILE_PATH):
+        log_file_execution(CSV_FILE_PATH)
+    
+    # 데이터 읽기 (모드에 따라)
+    if INPUT_MODE == 'manual':
+        print("수동 입력 모드")
+        # 수동 입력 데이터를 일일 주차 CSV에 먼저 저장
+        save_manual_input_to_csv()
+        df = read_manual_input()
+        if df is None:
+            print("입력된 데이터가 없습니다.")
+            return
+        print(f"수동 입력 데이터 로드 완료: 총 {len(df)}개 차량")
+    else:
+        print(f"CSV 파일: {os.path.basename(CSV_FILE_PATH)}")
+        df = read_car_data_from_csv()
+        if df is None:
+            print("CSV 파일을 읽을 수 없습니다.")
+            return
+        print(f"CSV 파일 로드 완료: 총 {len(df)}개 차량")
+    
+    processed_count = 0  # 실제 처리한 차량 수
+    success_count = 0  # 성공한 차량 수
+    session_alive = True  # 세션 상태
+    
+    for idx, row in df.iterrows():
+        car_number_raw = str(row['차량번호']).strip()
+        current_status = str(row['상태']).strip()
+        
+        # 이름 정보 가져오기 (있으면)
+        name = str(row.get('이름', '')).strip() if '이름' in row else ''
+        display_name = f"{name} - " if name and name != 'nan' else ""
+        
+        # 빈 차량번호는 건너뛰기
+        if not car_number_raw or car_number_raw == 'nan':
+            continue
+        
+        # 이미 등록 성공한 차량은 건너뛰기
+        if current_status and "성공" in current_status:
+            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이미 성공 처리됨, 건너뛰기")
+            continue
+        
+        # 차량번호 정규화 (공백 제거)
+        car_number = normalize_car_number(car_number_raw)
+        
+        print(f"\n[{idx+1}/{len(df)}] {display_name}{car_number_raw} (정규화: {car_number}) - 주차권 등록 시작")
+        processed_count += 1
+        
+        # 각 탭에서 할인권 적용 시도
+        tab_results = []
+        last_tab_idx = len(handles) - 1  # 마지막 탭 인덱스
+        
+        for tab_idx in range(len(handles)):
+            try:
+                driver.switch_to.window(handles[tab_idx])
+                # 올바른 iParking 사이트인지 확인
+                current_url = driver.current_url
+                if 'iparking' not in current_url.lower():
+                    print(f"  {tab_idx+1}번째 탭: 잘못된 사이트 ({current_url}) - 건너뛰기")
+                    tab_results.append("skip")
+                    continue
+                    
+                print(f"  {tab_idx+1}번째 탭에서 시도 중...")
+                
+                # 마지막 탭이면 홈으로 돌아가지 않음 (할인 내역 화면 유지)
+                is_last_tab = (tab_idx == last_tab_idx)
+                result = apply_discount(driver, car_number, return_home=not is_last_tab)
+                
+                # 세션 만료 감지
+                if result == "session_expired":
+                    print(f"  ❌ 세션 만료 감지!")
+                    
+                    # 자동 복구 시도
+                    if recover_session(driver, handles):
+                        print("  ✅ 세션 복구 완료! 현재 차량부터 다시 시도합니다.\n")
+                        # 처음부터 다시 시도 (현재 차량)
+                        tab_results = []
+                        for retry_tab_idx in range(len(handles)):
+                            try:
+                                driver.switch_to.window(handles[retry_tab_idx])
+                                print(f"  {retry_tab_idx+1}번째 탭에서 재시도 중...")
+                                
+                                is_last_tab = (retry_tab_idx == last_tab_idx)
+                                retry_result = apply_discount(driver, car_number, return_home=not is_last_tab)
+                                
+                                tab_results.append(retry_result)
+                                print(f"  {retry_tab_idx+1}번째 탭 결과: {retry_result}")
+                            except Exception as e:
+                                print(f"  {retry_tab_idx+1}번째 탭: 재시도 실패 - {e}")
+                                tab_results.append("error")
+                    else:
+                        print("  ❌ 세션 복구 실패! 작업을 중단합니다.")
+                        session_alive = False
+                    break
+                
+                tab_results.append(result)
+                print(f"  {tab_idx+1}번째 탭 결과: {result}")
+            except Exception as e:
+                print(f"  {tab_idx+1}번째 탭: 접근 실패 - {e}")
+                tab_results.append("error")
+        
+        # 세션 만료 시 루프 중단
+        if not session_alive:
+            print("\n⚠️ 세션 복구에 실패하여 작업을 중단합니다.")
+            break
+        
+        # 마지막 탭에서 할인권 개수 확인 (현재 화면에서 바로)
+        print(f"  [총 할인권 확인] {display_name}{car_number_raw} - 적용된 할인권 개수 확인 중...")
+        
+        wait = WebDriverWait(driver, 3)
+        
+        try:
+            # 마지막 탭이 이미 할인 내역 화면에 있으므로 바로 개수 확인
+            discount_count = check_applied_discounts(driver, wait)
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            if discount_count > 0:
+                print(f"  ✅ {display_name}{car_number_raw} → 주차권 {discount_count}개 부여됨")
+                update_csv_status(idx, f"등록성공({discount_count}개)", timestamp, car_number=car_number_raw, round_num=current_round)
+                success_count += 1
+            else:
+                # tab_results에서 차량 없음 확인
+                if any("no_car" in str(r) for r in tab_results):
+                    print(f"  ⚠️ {display_name}{car_number_raw} → 차량 없음")
+                    update_csv_status(idx, "차량 없음", timestamp, car_number=car_number_raw, round_num=current_round)
+                else:
+                    print(f"  ❌ {display_name}{car_number_raw} → 주차권 0개 (부여 실패)")
+                    update_csv_status(idx, "실패(0개)", timestamp, car_number=car_number_raw, round_num=current_round)
+            
+            # 확인 완료 후 홈으로 돌아가기
+            try:
+                home_btn = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                home_btn.click()
+            except Exception:
+                pass
+                
+        except Exception as e:
+            print(f"  [총 할인권 확인] {display_name}{car_number_raw} - 확인 중 오류: {e}")
+            update_csv_status(idx, "실패(오류)", datetime.now().strftime('%Y-%m-%d %H:%M:%S'), car_number=car_number_raw, round_num=current_round)
+            try:
+                home_btn = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
+                home_btn.click()
+            except Exception:
+                pass
+
+    print(f"\n=== 이번 사이클 완료 ===")
+    print(f"처리한 차량: {processed_count}대")
+    print(f"성공: {success_count}대, 실패: {processed_count - success_count}대")
+
+print("=== iParking 자동화 프로그램 시작 ===\n")
+
+# 데이터 입력 방식 선택
+print("데이터 입력 방식을 선택하세요:")
+print("-" * 60)
+for key, info in CSV_FILES.items():
+    file_path = info["path"]
+    exists = "✓" if os.path.exists(file_path) else "✗"
+    print(f"  {key}. {info['name']} {exists}")
+print(f"  3. 수동 입력 (이름 + 차량번호 직접 입력)")
+print("-" * 60)
+
+while True:
+    choice = input("\n번호를 입력하세요 (1, 2 또는 3): ").strip()
+    
+    if choice == "3":
+        # 수동 입력 모드
+        INPUT_MODE = 'manual'
+        print(f"\n선택됨: 수동 입력 모드")
+        print("\n차량 정보를 입력하세요")
+        print("형식: 차량번호만 또는 이름 차량번호 (공백 구분)")
+        print("예시: 42서4631          (차량번호만)")
+        print("      정세윤 42서4631   (이름 차량번호)")
+        print("      19두0353         (공백 없이 붙여서)")
+        print("여러 줄 입력 가능, 입력 완료 후 빈 줄에서 Enter 누르기")
+        print("-" * 60)
+        
+        MANUAL_DATA.clear()
+        line_count = 0
+        
+        while True:
+            line = input().strip()
+            if not line:  # 빈 줄이면 입력 종료
+                break
+            
+            # 공백이나 탭으로 구분
+            parts = line.split()
+            
+            if len(parts) == 1:
+                # 차량번호만 입력한 경우
+                car_number = parts[0]
+                # 차량번호 길이 체크 (최소 6자 이상 권장)
+                if len(normalize_car_number(car_number)) < 5:
+                    print(f"  ⚠️ 경고: '{car_number}' - 차량번호가 너무 짧습니다 (5자 미만)")
+                    print(f"      전체 차량번호를 입력하세요 (예: 19두0353)")
+                    continue
+                name = ""
+                MANUAL_DATA.append([name, car_number])
+                line_count += 1
+                print(f"  ✓ {line_count}. {car_number}")
+            elif len(parts) >= 2:
+                # 첫 단어가 한글로만 되어있으면 → 이름, 아니면 → 차량번호 일부
+                first_word = parts[0]
+                if re.match(r'^[가-힣]+$', first_word):
+                    # 순수 한글 → 이름으로 인식
+                    name = first_word
+                    car_number = ''.join(parts[1:])  # 나머지는 모두 차량번호 (공백 제거)
+                    # 차량번호 길이 체크
+                    if len(normalize_car_number(car_number)) < 5:
+                        print(f"  ⚠️ 경고: '{name} {car_number}' - 차량번호가 너무 짧습니다 (5자 미만)")
+                        print(f"      전체 차량번호를 입력하세요 (예: {name} 19두0353)")
+                        continue
+                    MANUAL_DATA.append([name, car_number])
+                    line_count += 1
+                    print(f"  ✓ {line_count}. {name} - {car_number}")
+                else:
+                    # 한글+숫자 섞임 → 전체를 차량번호로 (공백 제거)
+                    car_number = ''.join(parts)
+                    name = ""
+                    # 차량번호 길이 체크
+                    if len(normalize_car_number(car_number)) < 5:
+                        print(f"  ⚠️ 경고: '{car_number}' - 차량번호가 너무 짧습니다 (5자 미만)")
+                        print(f"      전체 차량번호를 입력하세요 (예: 19두0353)")
+                        continue
+                    MANUAL_DATA.append([name, car_number])
+                    line_count += 1
+                    print(f"  ✓ {line_count}. {car_number}")
+            else:
+                print(f"  ✗ 잘못된 형식입니다. 다시 입력하세요.")
+        
+        if len(MANUAL_DATA) == 0:
+            print("\n입력된 데이터가 없습니다. 프로그램을 종료합니다.")
+            exit()
+        
+        print(f"\n총 {len(MANUAL_DATA)}개 차량 입력 완료")
+        break
+        
+    elif choice in CSV_FILES:
+        # CSV 파일 모드
+        INPUT_MODE = 'csv'
+        default_path = CSV_FILES[choice]["path"]
+        default_dir = CSV_FILES[choice].get("default_dir", "")
+        
+        print(f"\n선택됨: {CSV_FILES[choice]['name']}")
+        
+        # 옵션 1번이고 주차_DB_파일 폴더에 파일이 있는 경우
+        if choice == "1" and default_path and os.path.exists(default_path):
+            file_name = os.path.basename(default_path)
+            file_time = datetime.fromtimestamp(os.path.getmtime(default_path)).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"📁 주차_DB_파일 폴더에서 최신 파일 자동 선택:")
+            print(f"   파일명: {file_name}")
+            print(f"   수정시간: {file_time}")
+            CSV_FILE_PATH = default_path
+            break
+        
+        print(f"기본 파일 경로: {default_path}")
+        
+        # 파일 존재 확인
+        if os.path.exists(default_path):
+            CSV_FILE_PATH = default_path
+            print(f"✓ 파일을 찾았습니다!")
+            break
+        else:
+            print(f"\n⚠️ 경고: 기본 파일을 찾을 수 없습니다!")
+            print(f"다른 파일을 선택하시겠습니까?")
+            print("  1) 파일 선택 대화상자 열기")
+            print("  2) 수동으로 경로 입력")
+            print("  3) 다시 선택")
+            print("  4) 종료")
+            
+            sub_choice = input("\n번호를 입력하세요 (1-4): ").strip()
+            
+            if sub_choice == "1":
+                # 파일 선택 대화상자
+                selected_path = select_csv_file(default_path, default_dir)
+                if selected_path and os.path.exists(selected_path):
+                    CSV_FILE_PATH = selected_path
+                    print(f"✓ 파일 선택 완료!")
+                    break
+                else:
+                    print("파일 선택 실패. 다시 선택하세요.")
+                    continue
+                    
+            elif sub_choice == "2":
+                # 수동 경로 입력
+                manual_path = input("CSV 파일 전체 경로를 입력하세요: ").strip().strip('"')
+                if os.path.exists(manual_path):
+                    CSV_FILE_PATH = manual_path
+                    print(f"✓ 파일을 찾았습니다!")
+                    break
+                else:
+                    print("파일을 찾을 수 없습니다. 다시 시도하세요.")
+                    continue
+                    
+            elif sub_choice == "3":
+                # 다시 선택
+                continue
+                
+            else:
+                # 종료
+                print("프로그램을 종료합니다.")
+                exit()
+        break
+    else:
+        print("잘못된 입력입니다. 1, 2 또는 3을 입력하세요.")
+
+print("\n" + "="*60)
+
+# Chrome 디버깅 모드 시작 및 연결
+
+def cleanup_debug_chrome():
+    """디버깅 모드로 실행된 Chrome 프로세스 정리"""
+    try:
+        print("\n기존 디버깅 Chrome 프로세스 확인 중...")
+        # PowerShell 명령으로 디버깅 모드 Chrome 찾기
+        cmd = 'Get-CimInstance Win32_Process -Filter "name = \'chrome.exe\'" | Where-Object { $_.CommandLine -like "*--remote-debugging-port=9222*" } | Select-Object ProcessId -ExpandProperty ProcessId'
+        result = subprocess.run(['powershell', '-Command', cmd], capture_output=True, text=True)
+        
+        if result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            print(f"발견된 디버깅 Chrome 프로세스: {len(pids)}개")
+            for pid in pids:
+                try:
+                    pid = pid.strip()
+                    if pid:
+                        subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True)
+                        print(f"  - PID {pid} 종료됨")
+                except Exception:
+                    pass
+            print("기존 디버깅 Chrome 정리 완료")
+            time.sleep(2)
+        else:
+            print("실행 중인 디버깅 Chrome 없음")
+    except Exception as e:
+        print(f"Chrome 정리 중 오류 (무시): {e}")
+
+def start_chrome_debug_mode():
+    """Chrome 디버깅 모드를 시작하는 함수"""
+    try:
+        # 포트 9222가 이미 사용 중인지 확인 (socket 연결 테스트)
+        print("포트 9222 상태 확인 중...")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('127.0.0.1', 9222))
+        sock.close()
+        
+        if result == 0:
+            print("  ✓ Chrome 디버깅 포트 9222가 이미 열려있습니다.")
+            print("  → 기존 Chrome 세션을 사용합니다.")
+            return True
+        else:
+            print(f"  ✗ 포트 9222 닫혀있음 (코드: {result})")
+            print("  → 새 Chrome 디버깅 세션을 시작합니다.")
+        
+        # Chrome 디버깅 모드 시작
+        chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        debug_dir = r"C:\chrome_debug_temp"
+        
+        # 디버그 디렉토리가 없으면 생성
+        if not os.path.exists(debug_dir):
+            os.makedirs(debug_dir)
+        
+        # Chrome 디버깅 모드 실행 (새 창으로 표시) - iParking URL 3개 탭으로 시작
+        iparking_url = "http://members.iparking.co.kr/html/login.html#!"
+        cmd = f'start "" "{chrome_path}" --remote-debugging-port=9222 --user-data-dir="{debug_dir}" "{iparking_url}" "{iparking_url}" "{iparking_url}"'
+        print(f"Chrome 디버깅 모드 시작 (iParking 탭 3개)")
+        print("Chrome 창이 새로 열립니다. 잠시만 기다려주세요...")
+        
+        subprocess.Popen(cmd, shell=True)
+        
+        # Chrome이 디버깅 포트를 열고 페이지를 로드할 때까지 대기
+        print("Chrome 초기화 및 페이지 로딩 중... (5초 대기)")
+        time.sleep(5)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Chrome 디버깅 모드 시작 실패: {e}")
+        return False
+
+# 기존 디버깅 Chrome 정리
+cleanup_debug_chrome()
+
+# Chrome 디버깅 모드 시작
+if not start_chrome_debug_mode():
+    print("Chrome 디버깅 모드를 시작할 수 없습니다.")
+    exit()
+
+# 이미 로그인된 크롬 세션에 연결
+try:
+    options = webdriver.ChromeOptions()
+    options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+    
+    # 연결 재시도 로직 추가
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            print(f"Chrome 연결 시도 {attempt + 1}/{max_retries}...")
+            driver = webdriver.Chrome(options=options)
+            print("Chrome 연결 성공!")
+            break
+        except Exception as e:
+            print(f"연결 시도 {attempt + 1} 실패: {e}")
+            if attempt < max_retries - 1:
+                print("5초 후 재시도...")
+                time.sleep(5)
+            else:
+                raise e
+    all_handles = driver.window_handles
+    
+    # Chrome 시작 시 이미 3개 탭이 열렸으므로 확인만 수행
+    print("\n=== iParking 탭 확인 ===")
+    
+    # 사용할 iParking URL
+    iparking_url = "http://members.iparking.co.kr/html/login.html#!"
+    
+    handles = []
+    
+    try:
+        print(f"열린 탭 {len(all_handles)}개 확인 중...")
+        
+        # 모든 탭을 확인하고 iParking이 아닌 탭만 변경
+        for i, handle in enumerate(all_handles):
+            try:
+                driver.switch_to.window(handle)
+                time.sleep(0.5)  # 탭 전환 대기
+                url = driver.current_url
+                
+                # iParking 페이지가 아니면 변경
+                if 'iparking' not in url.lower():
+                    print(f"  탭 {i+1}: 다른 페이지 감지, iParking으로 변경 중... (현재: {url[:50]})")
+                    driver.get(iparking_url)
+                    time.sleep(1.5)
+                    print(f"  ✓ 탭 {i+1}: 변경 완료")
+                else:
+                    print(f"  ✓ 탭 {i+1}: iParking 페이지 확인됨")
+                
+                handles.append(handle)
+                
+            except Exception as e:
+                print(f"  ✗ 탭 {i+1} 처리 중 오류: {e}")
+        
+        # 3개가 안되면 추가 생성
+        while len(handles) < 3:
+            try:
+                tab_num = len(handles) + 1
+                print(f"  추가 탭 {tab_num} 생성 중...")
+                
+                driver.execute_script(f"window.open('{iparking_url}', '_blank');")
+                time.sleep(2)
+                
+                new_handles = driver.window_handles
+                for handle in new_handles:
+                    if handle not in handles:
+                        driver.switch_to.window(handle)
+                        handles.append(handle)
+                        print(f"  ✓ 탭 {tab_num}: 생성 완료")
+                        break
+                        
+            except Exception as e:
+                print(f"  ✗ 탭 생성 중 오류: {e}")
+                break
+        
+        print(f"==================")
+        print(f"사용 가능한 iParking 탭 개수: {len(handles)}")
+        
+        if len(handles) == 0:
+            print("iParking 탭을 생성할 수 없습니다!")
+            exit()
+        
+        # 각 탭에 로그인 수행
+        print("\n=== 계정 로그인 시작 ===")
+        logged_in_count = 0
+        
+        for i, handle in enumerate(handles[:3]):  # 최대 3개 탭만 처리
+            try:
+                driver.switch_to.window(handle)
+                time.sleep(1)
+                current_url = driver.current_url
+                
+                # 이미 로그인되어 있는지 확인
+                if 'login' not in current_url:
+                    print(f"  ✓ 탭 {i+1}: 이미 로그인됨 ({ACCOUNTS[i]['username']})")
+                    logged_in_count += 1
+                else:
+                    # 로그인 필요
+                    print(f"  탭 {i+1}: {ACCOUNTS[i]['username']} 로그인 중...")
+                    if login_to_iparking(driver, ACCOUNTS[i]['username'], ACCOUNTS[i]['password']):
+                        # 로그인 후 URL 확인
+                        time.sleep(2)
+                        if 'login' not in driver.current_url:
+                            print(f"    ✓ 로그인 성공!")
+                            logged_in_count += 1
+                        else:
+                            print(f"    ✗ 로그인 실패 (아이디/비밀번호 확인 필요)")
+                    
+            except Exception as e:
+                print(f"  ✗ 탭 {i+1} 로그인 중 오류: {e}")
+        
+        print(f"==================")
+        print(f"로그인 완료: {logged_in_count}/{len(handles[:3])}개 계정")
+        
+        if logged_in_count == 0:
+            print("\n[!] 모든 계정 로그인 실패!")
+            print("아이디/비밀번호를 확인하거나 수동으로 로그인해주세요.")
+            exit()
+            
+    except Exception as e:
+        print(f"iParking 탭 생성 실패: {e}")
+        exit()
+    
+    # 첫 번째 탭으로 이동
+    driver.switch_to.window(handles[0])
+    print(f"첫 번째 탭으로 이동 완료\n")
+    
+except Exception as e:
+    print(f"크롬 브라우저 연결 실패: {e}")
+    print("해결 방법:")
+    print("1. Chrome이 설치되어 있는지 확인하세요.")
+    print("2. 수동으로 Chrome 디버깅 모드를 실행해보세요:")
+    print('   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\\chrome_debug_temp"')
+    print("3. 방화벽이나 보안 프로그램이 포트 9222를 차단하고 있는지 확인하세요.")
+    input("Enter를 눌러 프로그램을 종료하세요...")
+    exit()
+
+# 데이터 소스 확인
+if INPUT_MODE == 'manual':
+    print(f"\n수동 입력 데이터: {len(MANUAL_DATA)}개 차량")
+    print("데이터 준비 완료 ✓")
+else:
+    print(f"\n사용 중인 CSV 파일: {os.path.basename(CSV_FILE_PATH)}")
+    print("CSV 파일 준비 완료 ✓")
+
+# 실행 모드에 따라 반복 또는 단일 실행
+if INPUT_MODE == 'manual':
+    # 수동 입력 모드: 1회만 실행
+    print("\n수동 입력 모드 - 1회 실행 후 종료합니다.")
+    print("="*50)
+    
+    try:
+        run_parking_automation()
+        print("\n\n처리 완료!")
+        print("=== iParking 자동화 프로그램 종료 ===")
+    except KeyboardInterrupt:
+        print("\n\n프로그램이 사용자에 의해 중단되었습니다.")
+        print("=== iParking 자동화 프로그램 종료 ===")
+else:
+    # CSV 파일 모드: 5분마다 반복 실행
+    print("300초(5분)마다 자동화 실행을 시작합니다...")
+    print("프로그램을 중단하려면 Ctrl+C를 누르세요.")
+
+    cycle_count = 0
+    try:
+        while True:
+            cycle_count += 1
+            print(f"\n{'='*50}")
+            print(f"사이클 {cycle_count} 시작")
+            print(f"{'='*50}")
+            
+            # 자동화 실행
+            run_parking_automation()
+            
+            print(f"\n다음 실행까지 300초(5분) 대기 중...")
+            print(f"다음 실행 예정 시간: {(datetime.now() + timedelta(seconds=300)).strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # 300초 대기
+            time.sleep(300)
+            
+    except KeyboardInterrupt:
+        print("\n\n프로그램이 사용자에 의해 중단되었습니다.")
+        print("\n디버깅 Chrome 정리 중...")
+        cleanup_debug_chrome()
+        print("=== iParking 자동화 프로그램 종료 ===")
