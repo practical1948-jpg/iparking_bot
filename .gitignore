@@ -11,9 +11,9 @@ ENV/
 # Streamlit
 .streamlit/
 
-# � �
-# �(_DB_|/*.csv
-# ||_�]_|/*.csv
+# 민감 정보
+# 주차_DB_파일/*.csv
+# 일일_등록_파일/*.csv
 # file_execution_log.json
 
 # OS
@@ -26,9 +26,11 @@ Thumbs.db
 *.swp
 *.swo
 
-# �� |
+# 임시 파일
 *.tmp
 *.bak
 
-# Google Cloud x� | x
+# Google Cloud 인증 파일 제외
 iparking-bot/*.json
+firebase-credentials.json
+**/firebase-credentials.json
