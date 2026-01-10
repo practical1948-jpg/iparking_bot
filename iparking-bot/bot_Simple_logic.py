@@ -15,7 +15,7 @@ import pandas as pd
 from pathlib import Path
 import glob
 import json
-from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, clean_today_orphaned_records
+from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, get_existing_record_by_car, clean_today_orphaned_records
 
 
 
@@ -678,6 +678,13 @@ def check_and_handle_alert(driver):
     except:
         return None
 
+# 차량번호 정규화 함수 (공백, 특수문자 제거, 한글/숫자만)
+def normalize_car_number(car_number):
+    """차량번호를 정규화 (공백, 하이픈 등 제거)"""
+    if not car_number:
+        return ""
+    return re.sub(r'[^가-힣0-9]', '', str(car_number))
+
 # 주차권(할인권) 적용 함수
 def apply_discount(driver, car_number_full, return_home=True):
     """
@@ -916,14 +923,7 @@ def run_parking_automation():
             return
         print(f"CSV 파일 로드 완료: 총 {len(df)}개 차량")
         
-        # Firebase에서 CSV에 없는 고아 데이터 정리
-        print("🔥 Firebase 고아 데이터 정리 중...")
-        car_numbers_list = df['차량번호'].astype(str).tolist()
-        deleted = clean_today_orphaned_records(car_numbers_list, '주차 명단')
-        if deleted > 0:
-            print(f"✅ {deleted}개의 이전 데이터 삭제됨 (CSV에 없는 차량)")
-        else:
-            print("✅ 정리할 고아 데이터 없음")
+        # Firebase 고아 데이터 정리는 하지 않음 (이전 회차 데이터 보존)
     
     processed_count = 0  # 실제 처리한 차량 수
     success_count = 0  # 성공한 차량 수
@@ -941,15 +941,19 @@ def run_parking_automation():
         if not car_number_raw or car_number_raw == 'nan':
             continue
         
-        # Firebase에서 오늘 날짜와 차량번호로 이미 처리되었는지 확인
+        # Firebase에서 오늘 날짜와 차량번호로 이미 성공적으로 처리되었는지 확인
         today = datetime.now().strftime('%Y-%m-%d')
         data_source = '일일 등록' if INPUT_MODE == 'manual' else '주차 명단'
-        firebase_exists = check_record_exists_by_car(today, car_number_raw, data_source)
         
-        if firebase_exists:
-            # Firebase에 이미 있으면 건너뛰기 (같은 날 중복 실행 방지)
-            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 오늘 이미 처리됨, 건너뛰기")
+        # 등록 완료된 차량만 건너뛰기 (실패/차량없음은 다시 시도)
+        existing_record = get_existing_record_by_car(today, car_number_raw, data_source)
+        if existing_record and '등록성공' in str(existing_record.get('상태', '')):
+            # 등록 성공한 차량만 건너뛰기
+            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이미 등록 완료 (회차 {existing_record.get('회차', '?')}), 건너뛰기")
             continue
+        elif existing_record:
+            # 실패/차량없음 등은 다시 시도
+            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이전 상태: {existing_record.get('상태', '?')}, 재시도")
         
         # 차량번호 정규화 (공백 제거)
         car_number = normalize_car_number(car_number_raw)

@@ -86,7 +86,8 @@ def save_parking_record(data):
         # 오늘 날짜
         today = datetime.now().strftime('%Y-%m-%d')
         
-        # 문서 ID: 날짜_데이터소스_번호 (충돌 방지)
+        # 문서 ID: 날짜_데이터소스_번호 (같은 번호 = 같은 차량)
+        # 여러 회차에서 같은 번호를 처리하면 업데이트됨 (최신 상태 유지)
         data_source = data.get('데이터소스', '주차 명단')
         source_prefix = '주차' if '주차' in data_source else '일일'
         doc_id = f"{today}_{source_prefix}_{data.get('번호', 0):03d}"
@@ -234,6 +235,40 @@ def check_record_exists_by_car(date, car_number, data_source='주차 명단'):
         import traceback
         traceback.print_exc()
         return False
+
+def get_existing_record_by_car(date, car_number, data_source='주차 명단'):
+    """
+    특정 날짜와 차량번호로 기존 레코드 조회 (상태 확인용)
+    
+    Args:
+        date (str): 날짜 (YYYY-MM-DD)
+        car_number (str): 차량번호
+        data_source (str): 데이터소스 ('주차 명단' 또는 '일일 등록')
+    
+    Returns:
+        dict or None: 기존 레코드 (있으면), 없으면 None
+    """
+    try:
+        db = get_db()
+        if not db:
+            return None
+        
+        # 날짜로만 필터링
+        docs = db.collection('parking_records')\
+                 .where('날짜', '==', date)\
+                 .stream()
+        
+        # 차량번호와 데이터소스로 필터링
+        for doc in docs:
+            data = doc.to_dict()
+            if data.get('차량번호') == car_number and data.get('데이터소스') == data_source:
+                return data  # 전체 레코드 반환
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ Firebase 레코드 조회 실패: {e}")
+        return None
 
 def update_remark(date, number, data_source, remark):
     """
