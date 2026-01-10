@@ -216,16 +216,15 @@ def check_record_exists_by_car(date, car_number, data_source='주차 명단'):
         if not db:
             return False
         
-        # 단일 where 조건으로 검색 (인덱스 불필요)
-        # 날짜로만 필터링하고 나머지는 Python에서 처리
-        docs = db.collection('parking_records')\
-                 .where('날짜', '==', date)\
-                 .stream()
+        # 모든 문서 가져오기 (where 절 사용 안 함, 최대 1000개)
+        docs = db.collection('parking_records').limit(1000).stream()
         
-        # Python에서 차량번호와 데이터소스 필터링
+        # Python에서 필터링 (날짜 + 차량번호 + 데이터소스)
         for doc in docs:
             data = doc.to_dict()
-            if data.get('차량번호') == car_number and data.get('데이터소스') == data_source:
+            if (data.get('날짜') == date and 
+                data.get('차량번호') == car_number and 
+                data.get('데이터소스') == data_source):
                 return True
         
         return False
@@ -253,21 +252,25 @@ def get_existing_record_by_car(date, car_number, data_source='주차 명단'):
         if not db:
             return None
         
-        # 날짜로만 필터링
-        docs = db.collection('parking_records')\
-                 .where('날짜', '==', date)\
-                 .stream()
+        print(f"  🔍 Firebase 조회 중... (날짜: {date}, 차량: {car_number[:4]}****)")
         
-        # 차량번호와 데이터소스로 필터링
+        # 모든 문서 가져오기 (where 절 사용 안 함)
+        docs = db.collection('parking_records').limit(1000).stream()  # 최대 1000개로 제한
+        
+        # Python에서 필터링 (날짜 + 차량번호 + 데이터소스)
         for doc in docs:
             data = doc.to_dict()
-            if data.get('차량번호') == car_number and data.get('데이터소스') == data_source:
+            if (data.get('날짜') == date and 
+                data.get('차량번호') == car_number and 
+                data.get('데이터소스') == data_source):
+                print(f"  ✅ 기존 레코드 발견: {data.get('상태', '?')}")
                 return data  # 전체 레코드 반환
         
+        print(f"  ℹ️ 신규 차량 (기존 레코드 없음)")
         return None
         
     except Exception as e:
-        print(f"❌ Firebase 레코드 조회 실패: {e}")
+        print(f"  ❌ Firebase 레코드 조회 실패: {e}")
         return None
 
 def update_remark(date, number, data_source, remark):
