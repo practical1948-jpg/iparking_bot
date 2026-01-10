@@ -433,7 +433,19 @@ tab_db, tab_manual, tab_all = st.tabs(["📊 주차 명단", "✍️ 수동 입�
 def render_data_tab(df, data_name, csv_path, is_all_mode=False):
     """각 탭의 데이터를 렌더링하는 함수"""
     if df is None or len(df) == 0:
-        st.warning(f"❌ {data_name} 데이터를 불러올 수 없습니다.")
+        # Firebase 연결 상태에 따라 다른 메시지 표시
+        if FIREBASE_AVAILABLE:
+            # Firebase 연결 성공했지만 데이터 없음
+            if data_name == "수동 입력":
+                st.info("ℹ️ 수동 입력 데이터가 없습니다.")
+                st.caption("💡 봇을 실행하고 '수동 입력 모드'로 차량을 등록하면 여기에 표시됩니다.")
+            else:
+                st.warning(f"❌ {data_name} 데이터가 없습니다.")
+                st.caption(f"오늘({datetime.now().strftime('%Y-%m-%d')}) 처리된 데이터가 없습니다.")
+        else:
+            # Firebase 연결 실패
+            st.error(f"⚠️ Firebase 연결 실패: {data_name} 데이터를 불러올 수 없습니다.")
+            st.caption("Firebase 연결을 확인하거나 CSV 파일을 업로드하세요.")
         return
     
     # 디버깅 정보 (접을 수 있게)
