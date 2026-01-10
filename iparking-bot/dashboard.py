@@ -1441,12 +1441,13 @@ with tab_db:
             # 데이터소스가 "주차 명단"인 것만
             df = df_all[df_all['데이터소스'] == '주차 명단'].copy()
         else:
-            df = df_all
+            df = df_all if df_all is not None else None
         
-        if df is None:  # Firebase 실패 시 로컬 CSV
+        if df is None or len(df) == 0:  # Firebase 실패 시 로컬 CSV
             file_mtime = get_file_mtime(csv_path)
             df = load_data(csv_path, file_mtime)
     else:
+        # Firebase 사용 불가 시 로컬 CSV
         file_mtime = get_file_mtime(csv_path)
         df = load_data(csv_path, file_mtime)
     
@@ -1462,7 +1463,7 @@ with tab_manual:
             # 데이터소스가 "일일 등록"인 것만 (수동 입력)
             df = df_all[df_all['데이터소스'] == '일일 등록'].copy()
         else:
-            df = df_all
+            df = df_all if df_all is not None else None
     else:
         # 로컬 모드에서는 빈 데이터
         df = None
@@ -1509,5 +1510,39 @@ with tab_all:
                 csv_path = DAILY_CSV_PATH
             else:
                 df_all = None
+                csv_path = ''
+    else:
+        # Firebase 없을 때 로컬 CSV 로드
+        db_mtime = get_file_mtime(DB_CSV_PATH)
+        daily_mtime = get_file_mtime(DAILY_CSV_PATH)
+        df_db = load_data(DB_CSV_PATH, db_mtime)
+        df_daily = load_data(DAILY_CSV_PATH, daily_mtime)
+        
+        # 데이터 합치기
+        if df_db is not None and df_daily is not None:
+            # 컬럼 통일
+            if '성함' in df_db.columns:
+                df_db = df_db.rename(columns={'성함': '이름'})
+            if '이름' not in df_db.columns and '성함' not in df_db.columns:
+                df_db['이름'] = ''
+            if '이름' not in df_daily.columns:
+                df_daily['이름'] = ''
+            
+            df_db['데이터_소스'] = '주차 명단'
+            df_daily['데이터_소스'] = '수동 입력'
+            
+            df_all = pd.concat([df_db, df_daily], ignore_index=True)
+            csv_path = f"{DB_CSV_PATH}, {DAILY_CSV_PATH}"
+        elif df_db is not None:
+            df_all = df_db
+            df_all['데이터_소스'] = '주차 명단'
+            csv_path = DB_CSV_PATH
+        elif df_daily is not None:
+            df_all = df_daily
+            df_all['데이터_소스'] = '수동 입력'
+            csv_path = DAILY_CSV_PATH
+        else:
+            df_all = None
+            csv_path = ''
     
     render_data_tab(df_all, data_name, csv_path if 'csv_path' in locals() else '', is_all_mode=True)
