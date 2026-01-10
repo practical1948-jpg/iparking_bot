@@ -7,6 +7,14 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 import os
 from pathlib import Path
+import pytz
+
+# 서울 표준시 타임존
+KST = pytz.timezone('Asia/Seoul')
+
+def get_kst_now():
+    """서울 표준시 현재 시간 반환"""
+    return datetime.now(KST)
 
 # Firebase 초기화 상태
 _initialized = False
@@ -83,8 +91,8 @@ def save_parking_record(data):
         if not db:
             return False
         
-        # 오늘 날짜
-        today = datetime.now().strftime('%Y-%m-%d')
+        # 서울 표준시 기준 오늘 날짜
+        today = get_kst_now().strftime('%Y-%m-%d')
         
         # 문서 ID: 날짜_데이터소스_번호 (같은 번호 = 같은 차량)
         # 여러 회차에서 같은 번호를 처리하면 업데이트됨 (최신 상태 유지)
