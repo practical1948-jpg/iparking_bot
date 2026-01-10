@@ -127,10 +127,9 @@ def get_parking_records(date=None):
         if date is None:
             date = datetime.now().strftime('%Y-%m-%d')
         
-        # Firestore 쿼리
+        # Firestore 쿼리 (단일 where 조건, order_by는 Python에서 처리)
         docs = db.collection('parking_records')\
                  .where('날짜', '==', date)\
-                 .order_by('번호')\
                  .stream()
         
         # 데이터 변환
@@ -138,6 +137,9 @@ def get_parking_records(date=None):
         for doc in docs:
             data = doc.to_dict()
             records.append(data)
+        
+        # Python에서 번호로 정렬
+        records.sort(key=lambda x: x.get('번호', 0))
         
         return records
         
@@ -213,22 +215,24 @@ def check_record_exists_by_car(date, car_number, data_source='주차 명단'):
         if not db:
             return False
         
-        # 차량번호로 검색
+        # 단일 where 조건으로 검색 (인덱스 불필요)
+        # 날짜로만 필터링하고 나머지는 Python에서 처리
         docs = db.collection('parking_records')\
                  .where('날짜', '==', date)\
-                 .where('차량번호', '==', car_number)\
-                 .where('데이터소스', '==', data_source)\
-                 .limit(1)\
                  .stream()
         
-        # 하나라도 존재하면 True
+        # Python에서 차량번호와 데이터소스 필터링
         for doc in docs:
-            return True
+            data = doc.to_dict()
+            if data.get('차량번호') == car_number and data.get('데이터소스') == data_source:
+                return True
         
         return False
         
     except Exception as e:
         print(f"❌ Firebase 차량번호 체크 실패: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def update_remark(date, number, data_source, remark):
@@ -311,19 +315,19 @@ def clean_today_orphaned_records(today_car_numbers, data_source='주차 명단')
         
         today = datetime.now().strftime('%Y-%m-%d')
         
-        # 오늘 날짜의 모든 데이터 조회
+        # 오늘 날짜의 모든 데이터 조회 (단일 where 조건)
         docs = db.collection('parking_records')\
                  .where('날짜', '==', today)\
-                 .where('데이터소스', '==', data_source)\
                  .stream()
         
         deleted_count = 0
         for doc in docs:
             data = doc.to_dict()
             car_number = data.get('차량번호', '')
+            doc_data_source = data.get('데이터소스', '')
             
-            # CSV에 없는 차량번호면 삭제
-            if car_number not in today_car_numbers:
+            # 데이터소스가 일치하고, CSV에 없는 차량번호면 삭제
+            if doc_data_source == data_source and car_number not in today_car_numbers:
                 doc.reference.delete()
                 deleted_count += 1
                 print(f"  🗑️ 고아 데이터 삭제: {car_number}")
