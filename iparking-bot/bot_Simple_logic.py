@@ -941,19 +941,24 @@ def run_parking_automation():
         if not car_number_raw or car_number_raw == 'nan':
             continue
         
-        # Firebase에서 오늘 날짜와 차량번호로 이미 성공적으로 처리되었는지 확인
-        today = datetime.now().strftime('%Y-%m-%d')
-        data_source = '일일 등록' if INPUT_MODE == 'manual' else '주차 명단'
-        
-        # 등록 완료된 차량만 건너뛰기 (실패/차량없음은 다시 시도)
-        existing_record = get_existing_record_by_car(today, car_number_raw, data_source)
-        if existing_record and '등록성공' in str(existing_record.get('상태', '')):
-            # 등록 성공한 차량만 건너뛰기
-            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이미 등록 완료 (회차 {existing_record.get('회차', '?')}), 건너뛰기")
-            continue
-        elif existing_record:
-            # 실패/차량없음 등은 다시 시도
-            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이전 상태: {existing_record.get('상태', '?')}, 재시도")
+        # Firebase 중복 체크 (CSV 모드만)
+        if INPUT_MODE == 'csv':
+            # CSV 모드: 같은 날짜에 이미 처리된 차량인지 확인
+            today = datetime.now().strftime('%Y-%m-%d')
+            data_source = '주차 명단'
+            
+            # 등록 완료된 차량만 건너뛰기 (실패/차량없음은 다시 시도)
+            existing_record = get_existing_record_by_car(today, car_number_raw, data_source)
+            if existing_record and '등록성공' in str(existing_record.get('상태', '')):
+                # 등록 성공한 차량만 건너뛰기
+                print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이미 등록 완료 (회차 {existing_record.get('회차', '?')}), 건너뛰기")
+                continue
+            elif existing_record:
+                # 실패/차량없음 등은 다시 시도
+                print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이전 상태: {existing_record.get('상태', '?')}, 재시도")
+        else:
+            # 수동 입력 모드: 중복 체크 없이 바로 처리
+            print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 수동 입력 (중복 체크 생략)")
         
         # 차량번호 정규화 (공백 제거)
         car_number = normalize_car_number(car_number_raw)

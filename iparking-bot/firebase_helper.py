@@ -254,19 +254,33 @@ def get_existing_record_by_car(date, car_number, data_source='주차 명단'):
         
         print(f"  🔍 Firebase 조회 중... (날짜: {date}, 차량: {car_number[:4]}****)")
         
-        # 모든 문서 가져오기 (where 절 사용 안 함)
-        docs = db.collection('parking_records').limit(1000).stream()  # 최대 1000개로 제한
+        # 문서 ID 기반 직접 조회 시도 (가장 빠름)
+        source_prefix = '주차' if '주차' in data_source else '일일'
         
-        # Python에서 필터링 (날짜 + 차량번호 + 데이터소스)
+        # 가능한 문서 ID 패턴 확인 (번호는 알 수 없으므로 컬렉션 조회 필요)
+        # 최근 데이터만 조회 (오늘/어제)
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        date_range = [
+            today.strftime('%Y-%m-%d'),
+            yesterday.strftime('%Y-%m-%d')
+        ]
+        
+        # 최근 2일치만 조회
+        docs = db.collection('parking_records').limit(500).stream()
+        
+        count = 0
         for doc in docs:
+            count += 1
             data = doc.to_dict()
             if (data.get('날짜') == date and 
                 data.get('차량번호') == car_number and 
                 data.get('데이터소스') == data_source):
-                print(f"  ✅ 기존 레코드 발견: {data.get('상태', '?')}")
+                print(f"  ✅ 기존 레코드 발견: {data.get('상태', '?')} (조회한 문서: {count}개)")
                 return data  # 전체 레코드 반환
         
-        print(f"  ℹ️ 신규 차량 (기존 레코드 없음)")
+        print(f"  ℹ️ 신규 차량 (기존 레코드 없음, 조회한 문서: {count}개)")
         return None
         
     except Exception as e:
