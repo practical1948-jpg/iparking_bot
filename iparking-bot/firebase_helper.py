@@ -27,19 +27,28 @@ def initialize_firebase():
             print(f"⚠️ Firebase 인증 파일을 찾을 수 없습니다: {cred_path}")
             return None
         
-        # Firebase 초기화
-        cred = credentials.Certificate(str(cred_path))
-        firebase_admin.initialize_app(cred)
+        # Firebase 초기화 (이미 초기화되어 있으면 기존 앱 사용)
+        try:
+            # 기존 앱이 있는지 확인
+            firebase_admin.get_app()
+            print("ℹ️ Firebase 앱이 이미 초기화되어 있습니다.")
+        except ValueError:
+            # 앱이 없으면 새로 초기화
+            cred = credentials.Certificate(str(cred_path))
+            firebase_admin.initialize_app(cred)
+            print("✅ Firebase 앱 초기화 완료!")
         
         # Firestore 클라이언트
         _db = firestore.client()
         _initialized = True
         
-        print("✅ Firebase 초기화 완료!")
+        print("✅ Firebase 연결 완료!")
         return _db
         
     except Exception as e:
         print(f"❌ Firebase 초기화 실패: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def get_db():
@@ -187,6 +196,41 @@ def check_record_exists(date, number, data_source='주차 명단'):
         print(f"❌ Firebase 체크 실패: {e}")
         return False
 
+def check_record_exists_by_car(date, car_number, data_source='주차 명단'):
+    """
+    특정 날짜와 차량번호로 데이터가 Firebase에 존재하는지 확인
+    
+    Args:
+        date (str): 날짜 (YYYY-MM-DD)
+        car_number (str): 차량번호
+        data_source (str): 데이터소스 ('주차 명단' 또는 '일일 등록')
+    
+    Returns:
+        bool: 존재 여부
+    """
+    try:
+        db = get_db()
+        if not db:
+            return False
+        
+        # 차량번호로 검색
+        docs = db.collection('parking_records')\
+                 .where('날짜', '==', date)\
+                 .where('차량번호', '==', car_number)\
+                 .where('데이터소스', '==', data_source)\
+                 .limit(1)\
+                 .stream()
+        
+        # 하나라도 존재하면 True
+        for doc in docs:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ Firebase 차량번호 체크 실패: {e}")
+        return False
+
 def update_remark(date, number, data_source, remark):
     """
     특정 데이터의 비고 업데이트
@@ -248,3 +292,47 @@ def delete_old_records(days=30):
     except Exception as e:
         print(f"❌ Firebase 삭제 실패: {e}")
         return False
+
+def clean_today_orphaned_records(today_car_numbers, data_source='주차 명단'):
+    """
+    오늘 날짜의 데이터 중 CSV에 없는 차량번호(고아 데이터) 삭제
+    
+    Args:
+        today_car_numbers (list): 현재 CSV에 있는 차량번호 리스트
+        data_source (str): 데이터소스
+    
+    Returns:
+        int: 삭제된 데이터 개수
+    """
+    try:
+        db = get_db()
+        if not db:
+            return 0
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # 오늘 날짜의 모든 데이터 조회
+        docs = db.collection('parking_records')\
+                 .where('날짜', '==', today)\
+                 .where('데이터소스', '==', data_source)\
+                 .stream()
+        
+        deleted_count = 0
+        for doc in docs:
+            data = doc.to_dict()
+            car_number = data.get('차량번호', '')
+            
+            # CSV에 없는 차량번호면 삭제
+            if car_number not in today_car_numbers:
+                doc.reference.delete()
+                deleted_count += 1
+                print(f"  🗑️ 고아 데이터 삭제: {car_number}")
+        
+        if deleted_count > 0:
+            print(f"✅ {deleted_count}개의 고아 데이터 삭제 완료")
+        
+        return deleted_count
+        
+    except Exception as e:
+        print(f"❌ Firebase 고아 데이터 삭제 실패: {e}")
+        return 0

@@ -15,7 +15,7 @@ import pandas as pd
 from pathlib import Path
 import glob
 import json
-from firebase_helper import save_parking_record, initialize_firebase, check_record_exists
+from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, clean_today_orphaned_records
 
 
 
@@ -915,6 +915,15 @@ def run_parking_automation():
             print("CSV 파일을 읽을 수 없습니다.")
             return
         print(f"CSV 파일 로드 완료: 총 {len(df)}개 차량")
+        
+        # Firebase에서 CSV에 없는 고아 데이터 정리
+        print("🔥 Firebase 고아 데이터 정리 중...")
+        car_numbers_list = df['차량번호'].astype(str).tolist()
+        deleted = clean_today_orphaned_records(car_numbers_list, '주차 명단')
+        if deleted > 0:
+            print(f"✅ {deleted}개의 이전 데이터 삭제됨 (CSV에 없는 차량)")
+        else:
+            print("✅ 정리할 고아 데이터 없음")
     
     processed_count = 0  # 실제 처리한 차량 수
     success_count = 0  # 성공한 차량 수
@@ -932,10 +941,10 @@ def run_parking_automation():
         if not car_number_raw or car_number_raw == 'nan':
             continue
         
-        # Firebase에서 오늘 날짜로 이미 처리되었는지 확인 (CSV 상태와 무관)
+        # Firebase에서 오늘 날짜와 차량번호로 이미 처리되었는지 확인
         today = datetime.now().strftime('%Y-%m-%d')
         data_source = '일일 등록' if INPUT_MODE == 'manual' else '주차 명단'
-        firebase_exists = check_record_exists(today, idx + 1, data_source)
+        firebase_exists = check_record_exists_by_car(today, car_number_raw, data_source)
         
         if firebase_exists:
             # Firebase에 이미 있으면 건너뛰기 (같은 날 중복 실행 방지)
@@ -1016,11 +1025,17 @@ def run_parking_automation():
             discount_count = check_applied_discounts(driver, wait)
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            if discount_count > 0:
-                print(f"  ✅ {display_name}{car_number_raw} → 주차권 {discount_count}개 부여됨")
-                update_csv_status(idx, f"등록성공({discount_count}개)", timestamp, car_number=car_number_raw, round_num=current_round)
+            # 3개 모두 성공해야만 "성공" 처리 (엄격)
+            if discount_count == 3:
+                print(f"  ✅ {display_name}{car_number_raw} → 주차권 3개 부여됨 (완료)")
+                update_csv_status(idx, f"등록성공(완료)", timestamp, car_number=car_number_raw, round_num=current_round)
                 success_count += 1
+            elif discount_count > 0:
+                # 1~2개만 적용 = 부분 성공
+                print(f"  ⚠️ {display_name}{car_number_raw} → 주차권 {discount_count}개만 부여됨 (부분성공)")
+                update_csv_status(idx, f"부분성공({discount_count}개)", timestamp, car_number=car_number_raw, round_num=current_round)
             else:
+                # 0개 적용
                 # tab_results에서 차량 없음 확인
                 if any("no_car" in str(r) for r in tab_results):
                     print(f"  ⚠️ {display_name}{car_number_raw} → 차량 없음")

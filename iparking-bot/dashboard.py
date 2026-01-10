@@ -10,10 +10,17 @@ import glob
 import shutil
 import json
 import hashlib
-from firebase_helper import get_parking_records, get_all_dates, initialize_firebase, update_remark
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+
+# Firebase 연동
+try:
+    from firebase_helper import get_parking_records, initialize_firebase, update_remark
+    FIREBASE_IMPORT_SUCCESS = True
+except ImportError as e:
+    FIREBASE_IMPORT_SUCCESS = False
+    print(f"⚠️ Firebase 모듈 import 실패: {e}")
 
 # 자동 새로고침 컴포넌트 임포트 (설치: pip install streamlit-autorefresh)
 try:
@@ -113,13 +120,24 @@ scroll_script = """
 components.html(scroll_script, height=0)
 
 # Firebase 초기화
-try:
-    initialize_firebase()
-    FIREBASE_AVAILABLE = True
-    st.sidebar.success("🔥 Firebase 연결됨")
-except Exception as e:
+if FIREBASE_IMPORT_SUCCESS:
+    try:
+        db = initialize_firebase()
+        if db:
+            FIREBASE_AVAILABLE = True
+            st.sidebar.success("🔥 Firebase 연결됨")
+        else:
+            FIREBASE_AVAILABLE = False
+            st.sidebar.error("⚠️ Firebase 연결 실패")
+            st.sidebar.caption("Firebase 초기화 실패 (DB 없음)")
+    except Exception as e:
+        FIREBASE_AVAILABLE = False
+        st.sidebar.error("⚠️ Firebase 연결 실패")
+        st.sidebar.caption(f"에러: {str(e)}")
+        print(f"Firebase 초기화 에러: {e}")
+else:
     FIREBASE_AVAILABLE = False
-    st.sidebar.warning("⚠️ Firebase 연결 실패 - 로컬 모드")
+    st.sidebar.warning("⚠️ Firebase 모듈 없음")
 
 # CSV 파일 경로 (상대 경로 사용 - 배포 가능)
 # 현재 스크립트 파일의 위치를 기준으로 상위 디렉토리 사용
@@ -474,10 +492,11 @@ def render_data_tab(df, data_name, csv_path, is_all_mode=False):
         date_info = f"{selected_date.strftime('%Y년 %m월 %d일')}"
     
     # 상단 통계 (필터링된 데이터 기준) - 통일된 형식
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     total = len(filtered_df)
-    success = len(filtered_df[filtered_df['상태'].str.contains('성공', na=False)]) if '상태' in filtered_df.columns else 0
+    success = len(filtered_df[filtered_df['상태'].str.contains('등록성공', na=False)]) if '상태' in filtered_df.columns else 0
+    partial = len(filtered_df[filtered_df['상태'].str.contains('부분성공', na=False)]) if '상태' in filtered_df.columns else 0
     fail = len(filtered_df[filtered_df['상태'].str.contains('실패', na=False)]) if '상태' in filtered_df.columns else 0
     no_car = len(filtered_df[filtered_df['상태'].str.contains('차량 없음', na=False)]) if '상태' in filtered_df.columns else 0
     pending = len(filtered_df[filtered_df['상태'] == '미등록']) if '상태' in filtered_df.columns else total
@@ -485,9 +504,10 @@ def render_data_tab(df, data_name, csv_path, is_all_mode=False):
     # 통일된 형식으로 표시
     col1.metric("📊 총 차량", f"{total}대")
     col2.metric("✅ 등록 성공", f"{success}대")
-    col3.metric("❌ 등록 실패", f"{fail}대")
-    col4.metric("🚫 차량 없음", f"{no_car}대")
-    col5.metric("⏳ 대기 중", f"{pending}대")
+    col3.metric("⚠️ 부분 성공", f"{partial}대")
+    col4.metric("❌ 등록 실패", f"{fail}대")
+    col5.metric("🚫 차량 없음", f"{no_car}대")
+    col6.metric("⏳ 대기 중", f"{pending}대")
     
     # 탭 구성
     tab1, tab2, tab3 = st.tabs(["📋 전체 현황", "🔍 차량 조회", "📊 통계"])
@@ -498,7 +518,7 @@ def render_data_tab(df, data_name, csv_path, is_all_mode=False):
         # 상태 필터
         status_filter_option = st.selectbox(
             "상태 필터",
-            ["전체", "등록 성공", "등록 실패", "차량 없음", "대기중"],
+            ["전체", "등록 성공", "부분 성공", "등록 실패", "차량 없음", "대기중"],
             key=f"status_filter_{data_name}"
         )
         
@@ -510,7 +530,9 @@ def render_data_tab(df, data_name, csv_path, is_all_mode=False):
         # 상태 필터 적용
         display_df = filtered_df_display.copy()
         if status_filter_option == "등록 성공":
-            display_df = display_df[display_df['상태'].str.contains('성공', na=False)]
+            display_df = display_df[display_df['상태'].str.contains('등록성공', na=False)]
+        elif status_filter_option == "부분 성공":
+            display_df = display_df[display_df['상태'].str.contains('부분성공', na=False)]
         elif status_filter_option == "등록 실패":
             display_df = display_df[display_df['상태'].str.contains('실패', na=False)]
         elif status_filter_option == "차량 없음":
@@ -559,8 +581,10 @@ def render_data_tab(df, data_name, csv_path, is_all_mode=False):
         if '상태' in display_df_display.columns:
             def format_status(status):
                 status_str = str(status)
-                if '성공' in status_str:
+                if '등록성공' in status_str:
                     return f"✅ {status_str}"
+                elif '부분성공' in status_str:
+                    return f"⚠️ {status_str}"
                 elif '차량 없음' in status_str:
                     return f"🚫 {status_str}"
                 elif '실패' in status_str:
@@ -599,12 +623,15 @@ def render_data_tab(df, data_name, csv_path, is_all_mode=False):
             status_str = str(row['상태'])
             
             # 상태 컬럼에만 배경색 적용
-            if '성공' in status_str or '✅' in status_str:
-                # 초록 배경
+            if '등록성공' in status_str or ('✅' in status_str and '완료' in status_str):
+                # 초록 배경 (완전 성공)
                 styles[status_idx] = 'background-color: #d4edda; color: #155724'
+            elif '부분성공' in status_str or ('⚠️' in status_str and ('1개' in status_str or '2개' in status_str)):
+                # 주황 배경 (부분 성공)
+                styles[status_idx] = 'background-color: #fff3cd; color: #856404'
             elif '차량 없음' in status_str or '🚫' in status_str:
                 # 노랑 배경
-                styles[status_idx] = 'background-color: #fff3cd; color: #856404'
+                styles[status_idx] = 'background-color: #ffe5b4; color: #856404'
             elif '실패' in status_str or '❌' in status_str:
                 # 빨강 배경
                 styles[status_idx] = 'background-color: #f8d7da; color: #721c24'
