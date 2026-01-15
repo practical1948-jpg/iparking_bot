@@ -11,9 +11,14 @@
       "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (15).csv"
     },
     "(신규)주차등록(응답) - 차량_DB 시트 (17).csv": {
-      "last_executed": "2026-01-10 18:15:48",
-      "execution_count": 5,
+      "last_executed": "2026-01-13 20:50:28",
+      "execution_count": 7,
       "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (17).csv"
+    },
+    "(신규)주차등록(응답) - 차량_DB 시트 (18).csv": {
+      "last_executed": "2026-01-13 21:28:36",
+      "execution_count": 2,
+      "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (18).csv"
     }
   },
   "execution_list": [
@@ -46,6 +51,26 @@
       "file_name": "(신규)주차등록(응답) - 차량_DB 시트 (17).csv",
       "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (17).csv",
       "executed_at": "2026-01-10 18:15:48"
+    },
+    {
+      "file_name": "(신규)주차등록(응답) - 차량_DB 시트 (17).csv",
+      "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (17).csv",
+      "executed_at": "2026-01-11 09:55:44"
+    },
+    {
+      "file_name": "(신규)주차등록(응답) - 차량_DB 시트 (17).csv",
+      "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (17).csv",
+      "executed_at": "2026-01-13 20:50:28"
+    },
+    {
+      "file_name": "(신규)주차등록(응답) - 차량_DB 시트 (18).csv",
+      "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (18).csv",
+      "executed_at": "2026-01-13 21:22:01"
+    },
+    {
+      "file_name": "(신규)주차등록(응답) - 차량_DB 시트 (18).csv",
+      "file_path": "C:\\Users\\myc43\\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\\바탕 화면\\업무 자료\\dev\\iparking-bot\\주차_DB_파일\\(신규)주차등록(응답) - 차량_DB 시트 (18).csv",
+      "executed_at": "2026-01-13 21:28:36"
     }
   ]
 }

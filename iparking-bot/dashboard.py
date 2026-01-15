@@ -4,6 +4,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 import re
 import time
 import glob
@@ -427,7 +428,7 @@ def render_sidebar(data_name: str, date_info: str, df: pd.DataFrame, csv_path: s
             st.sidebar.error("❌ 파일 없음")
 
 # 데이터 타입 선택을 탭 형식으로 변경
-tab_db, tab_manual, tab_all = st.tabs(["📊 주차 명단", "✍️ 수동 입력", "🔗 전체"])
+tab_db, tab_manual, tab_all, tab_logs = st.tabs(["📊 주차 명단", "✍️ 수동 입력", "🔗 전체", "📋 실시간 로그"])
 
 # 각 탭별 데이터 처리 함수
 def render_data_tab(df, data_name, csv_path, is_all_mode=False):
@@ -1558,3 +1559,105 @@ with tab_all:
             csv_path = ''
     
     render_data_tab(df_all, data_name, csv_path if 'csv_path' in locals() else '', is_all_mode=True)
+
+# 📋 실시간 로그 탭
+with tab_logs:
+    st.header("📋 봇 실시간 로그")
+    
+    # 로그 디렉토리
+    LOG_DIR = Path("logs")
+    LOG_DIR.mkdir(exist_ok=True)
+    
+    # 사이드바 정보 (탭 전용)
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📋 로그 설정")
+    
+    # 로그 파일 찾기
+    log_files = sorted(LOG_DIR.glob("*.log"), key=os.path.getmtime, reverse=True)
+    
+    if not log_files:
+        st.warning("⚠️ 로그 파일이 없습니다.")
+        st.info("💡 터미널에서 봇을 실행하면 로그가 생성됩니다.")
+        st.code("""
+# 봇 파일에 2줄만 추가:
+from logger_helper import enable_dual_logging
+
+def main():
+    enable_dual_logging()  # 첫 줄에 추가
+    # ... 나머지 코드
+""", language="python")
+    else:
+        # 가장 최근 파일 기본 선택
+        selected_file = st.sidebar.selectbox(
+            "로그 파일 선택",
+            log_files,
+            format_func=lambda x: f"{x.name} ({datetime.fromtimestamp(os.path.getmtime(x)).strftime('%H:%M:%S')})",
+            key="log_file_selector"
+        )
+        
+        # 자동 새로고침 설정
+        auto_refresh_logs = st.sidebar.checkbox("🔄 자동 새로고침 (5초)", value=True, key="auto_refresh_logs")
+        
+        if auto_refresh_logs:
+            st.sidebar.caption("⏱️ 5초마다 자동 갱신 중...")
+        
+        # 수동 새로고침 버튼
+        if st.sidebar.button("🔄 지금 새로고침", use_container_width=True, key="manual_refresh_logs"):
+            st.rerun()
+        
+        st.sidebar.caption(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 메인: 로그 내용 표시
+        st.subheader(f"📄 {selected_file.name}")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            file_time = datetime.fromtimestamp(os.path.getmtime(selected_file))
+            st.caption(f"수정 시간: {file_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        with col2:
+            file_size = os.path.getsize(selected_file)
+            st.caption(f"크기: {file_size:,} bytes")
+        
+        # 로그 내용 읽기
+        try:
+            with open(selected_file, 'r', encoding='utf-8') as f:
+                log_content = f.read()
+            
+            # 마지막 N줄만 표시 (옵션)
+            show_lines = st.sidebar.slider("표시할 줄 수", 50, 1000, 500, 50, key="log_lines_slider")
+            
+            lines = log_content.split('\n')
+            if len(lines) > show_lines:
+                display_content = '\n'.join(lines[-show_lines:])
+                st.info(f"ℹ️ 마지막 {show_lines}줄만 표시 중 (전체: {len(lines)}줄)")
+            else:
+                display_content = log_content
+                st.info(f"📊 전체 {len(lines)}줄 표시 중")
+            
+            # 로그 표시 (스크롤 가능한 텍스트 영역)
+            st.text_area(
+                "로그 내용",
+                display_content,
+                height=600,
+                key="log_content_area",
+                label_visibility="collapsed"
+            )
+            
+            # 다운로드 버튼
+            st.download_button(
+                label="📥 로그 다운로드",
+                data=log_content,
+                file_name=selected_file.name,
+                mime="text/plain",
+                key="download_log_button"
+            )
+            
+            # 자동 새로고침
+            if auto_refresh_logs:
+                time.sleep(5)
+                st.rerun()
+            
+        except Exception as e:
+            st.error(f"❌ 로그 읽기 실패: {e}")

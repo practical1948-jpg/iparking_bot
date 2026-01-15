@@ -15,7 +15,7 @@ import pandas as pd
 from pathlib import Path
 import glob
 import json
-from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, get_existing_record_by_car, clean_today_orphaned_records
+from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, get_existing_record_by_car, clean_today_orphaned_records, get_processed_cars_today
 
 
 
@@ -370,7 +370,7 @@ def read_manual_input():
     # DataFrame 생성
     df = pd.DataFrame(MANUAL_DATA, columns=['이름', '차량번호'])
     df['상태'] = '미등록'
-    df['처리시간'] = ''
+    df['처리시간'] = pd.Series(dtype='object')  # 문자열 타입으로 명시
     
     return df
 
@@ -401,8 +401,8 @@ def read_car_data_from_csv():
         # 상태, 처리시간, 회차 열 초기화 (매번 백지 상태로 시작)
         # 원본 데이터(이름, 차량번호)만 유지하고 처리 결과는 리셋
         df['상태'] = '미등록'
-        df['처리시간'] = ''
-        df['회차'] = ''
+        df['처리시간'] = pd.Series(dtype='object')  # 문자열 타입으로 명시
+        df['회차'] = pd.Series(dtype='object')      # 문자열 타입으로 명시
         
         print(f"✅ CSV 로드 완료 - 상태 초기화됨 (원본 데이터만 유지)")
         
@@ -456,9 +456,9 @@ def update_csv_status(index, status, timestamp=None, car_number=None, round_num=
         if '상태' not in df.columns:
             df['상태'] = '미등록'
         if '처리시간' not in df.columns:
-            df['처리시간'] = ''
+            df['처리시간'] = pd.Series(dtype='object')  # 문자열 타입으로 명시
         if '회차' not in df.columns:
-            df['회차'] = ''
+            df['회차'] = pd.Series(dtype='object')      # 문자열 타입으로 명시
         
         # 수동 입력 모드면 차량번호로 찾기
         if INPUT_MODE == 'manual' and car_number:
@@ -466,9 +466,9 @@ def update_csv_status(index, status, timestamp=None, car_number=None, round_num=
             car_normalized = normalize_car_number(car_number)
             mask = df['차량번호'].apply(lambda x: normalize_car_number(str(x)) == car_normalized)
             if mask.any():
-                df.loc[mask, '상태'] = status
+                df.loc[mask, '상태'] = str(status)
                 if timestamp:
-                    df.loc[mask, '처리시간'] = timestamp
+                    df.loc[mask, '처리시간'] = str(timestamp)  # 명시적 문자열 변환
                 # 일일 등록은 회차 기록 안함
                 
                 # Firebase 동기화
@@ -487,11 +487,11 @@ def update_csv_status(index, status, timestamp=None, car_number=None, round_num=
                 print(f"  경고: 차량번호 {car_number}를 CSV에서 찾을 수 없습니다.")
         else:
             # 일반 모드: 인덱스로 업데이트
-            df.loc[index, '상태'] = status
+            df.loc[index, '상태'] = str(status)
             if timestamp:
-                df.loc[index, '처리시간'] = timestamp
+                df.loc[index, '처리시간'] = str(timestamp)  # 명시적 문자열 변환
             if round_num and INPUT_MODE == 'csv':  # CSV 모드만 회차 기록
-                df.loc[index, '회차'] = round_num
+                df.loc[index, '회차'] = str(round_num)      # 명시적 문자열 변환
             
             # Firebase 동기화 (CSV 모드만)
             if INPUT_MODE == 'csv':
@@ -929,6 +929,19 @@ def run_parking_automation():
     success_count = 0  # 성공한 차량 수
     session_alive = True  # 세션 상태
     
+    # ========================================
+    # 🚀 Firebase 캐싱: 한 번에 조회하여 메모리에 저장
+    # ========================================
+    # 기존: 차량마다 Firebase 조회 (123번 조회!)
+    # 변경: 시작 시 한 번만 조회 (1번 조회!)
+    processed_cars_cache = {}  # 캐시 초기화
+    
+    if INPUT_MODE == 'csv':
+        print("\n📊 Firebase 캐싱 시작...")
+        data_source = '주차 명단'
+        processed_cars_cache = get_processed_cars_today(data_source)
+        print(f"📊 캐싱 완료! 이후 중복 체크는 메모리에서 O(1)로 수행됩니다.\n")
+    
     for idx, row in df.iterrows():
         car_number_raw = str(row['차량번호']).strip()
         current_status = str(row['상태']).strip()
@@ -941,21 +954,18 @@ def run_parking_automation():
         if not car_number_raw or car_number_raw == 'nan':
             continue
         
-        # Firebase 중복 체크 (CSV 모드만)
+        # Firebase 중복 체크 (CSV 모드만) - 캐시 기반 O(1) 조회!
         if INPUT_MODE == 'csv':
-            # CSV 모드: 같은 날짜에 이미 처리된 차량인지 확인
-            today = datetime.now().strftime('%Y-%m-%d')
-            data_source = '주차 명단'
+            # 캐시에서 조회 (Firebase 호출 없이 즉시 확인!)
+            cached_status = processed_cars_cache.get(car_number_raw, None)
             
-            # 등록 완료된 차량만 건너뛰기 (실패/차량없음은 다시 시도)
-            existing_record = get_existing_record_by_car(today, car_number_raw, data_source)
-            if existing_record and '등록성공' in str(existing_record.get('상태', '')):
+            if cached_status and '등록성공' in cached_status:
                 # 등록 성공한 차량만 건너뛰기
-                print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이미 등록 완료 (회차 {existing_record.get('회차', '?')}), 건너뛰기")
+                print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이미 등록 완료, 건너뛰기")
                 continue
-            elif existing_record:
+            elif cached_status:
                 # 실패/차량없음 등은 다시 시도
-                print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이전 상태: {existing_record.get('상태', '?')}, 재시도")
+                print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 이전 상태: {cached_status}, 재시도")
         else:
             # 수동 입력 모드: 중복 체크 없이 바로 처리
             print(f"[{idx+1}/{len(df)}] {display_name}{car_number_raw} - 수동 입력 (중복 체크 생략)")

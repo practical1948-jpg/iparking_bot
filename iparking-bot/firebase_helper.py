@@ -275,8 +275,9 @@ def get_existing_record_by_car(date, car_number, data_source='주차 명단'):
             yesterday.strftime('%Y-%m-%d')
         ]
         
-        # 최근 2일치만 조회
-        docs = db.collection('parking_records').limit(500).stream()
+        # 최근 데이터만 조회 (30개로 제한하여 속도 대폭 개선)
+        print(f"     ⏳ 최근 데이터 조회 중... (최대 30개)")
+        docs = db.collection('parking_records').limit(30).stream()
         
         count = 0
         for doc in docs:
@@ -285,10 +286,10 @@ def get_existing_record_by_car(date, car_number, data_source='주차 명단'):
             if (data.get('날짜') == date and 
                 data.get('차량번호') == car_number and 
                 data.get('데이터소스') == data_source):
-                print(f"  ✅ 기존 레코드 발견: {data.get('상태', '?')} (조회한 문서: {count}개)")
+                print(f"  ✅ 기존 레코드 발견: {data.get('상태', '?')} (조회: {count}개)")
                 return data  # 전체 레코드 반환
         
-        print(f"  ℹ️ 신규 차량 (기존 레코드 없음, 조회한 문서: {count}개)")
+        print(f"  ℹ️ 신규 차량 (조회: {count}개)")
         return None
         
     except Exception as e:
@@ -400,3 +401,153 @@ def clean_today_orphaned_records(today_car_numbers, data_source='주차 명단')
     except Exception as e:
         print(f"❌ Firebase 고아 데이터 삭제 실패: {e}")
         return 0
+
+def append_log(date, number, data_source, log_message):
+    """
+    특정 레코드에 로그 메시지 추가
+    
+    Args:
+        date (str): 날짜 (YYYY-MM-DD)
+        number (int): 번호
+        data_source (str): 데이터소스
+        log_message (str): 추가할 로그 메시지
+    
+    Returns:
+        bool: 성공 여부
+    """
+    try:
+        db = get_db()
+        if not db:
+            return False
+        
+        # 문서 ID
+        source_prefix = '주차' if '주차' in data_source else '일일'
+        doc_id = f"{date}_{source_prefix}_{number:03d}"
+        
+        # 현재 로그 가져오기
+        doc_ref = db.collection('parking_records').document(doc_id)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            current_log = doc.to_dict().get('처리로그', '')
+            timestamp = get_kst_now().strftime('%H:%M:%S')
+            new_log = f"{current_log}\n[{timestamp}] {log_message}" if current_log else f"[{timestamp}] {log_message}"
+            
+            # 로그 업데이트
+            doc_ref.update({
+                '처리로그': new_log,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ Firebase 로그 추가 실패: {e}")
+        return False
+
+def get_pending_records(date=None):
+    """
+    처리 대기 중인 레코드 조회 (상태='미등록')
+    
+    Args:
+        date (str, optional): 조회할 날짜 (YYYY-MM-DD). None이면 오늘.
+    
+    Returns:
+        list: 대기 중인 레코드 리스트
+    """
+    try:
+        db = get_db()
+        if not db:
+            return []
+        
+        # 날짜 설정
+        if date is None:
+            date = get_kst_now().strftime('%Y-%m-%d')
+        
+        # Firestore 쿼리
+        docs = db.collection('parking_records')\
+                 .where('날짜', '==', date)\
+                 .where('상태', '==', '미등록')\
+                 .stream()
+        
+        records = []
+        for doc in docs:
+            data = doc.to_dict()
+            data['doc_id'] = doc.id
+            records.append(data)
+        
+        return records
+        
+    except Exception as e:
+        print(f"❌ Firebase 대기 레코드 조회 실패: {e}")
+        return []
+
+
+def get_processed_cars_today(data_source='주차 명단'):
+    """
+    오늘 이미 처리된 차량번호 집합 반환 (캐싱용)
+    
+    봇 시작 시 한 번만 호출하여 메모리에 캐싱.
+    각 차량별로 Firebase 조회하지 않고 O(1)로 중복 체크 가능.
+    
+    Args:
+        data_source (str): 데이터소스 ('주차 명단' 또는 '일일 등록')
+    
+    Returns:
+        dict: {차량번호: 상태} 형태의 딕셔너리
+              - "등록성공" 포함: 이미 처리 완료
+              - "차량 없음": 재시도 가능
+              - "실패": 재시도 가능
+    """
+    try:
+        db = get_db()
+        if not db:
+            return {}
+        
+        # 서울 표준시 기준 오늘 날짜
+        today = get_kst_now().strftime('%Y-%m-%d')
+        
+        print(f"  📊 Firebase에서 오늘({today}) 처리된 차량 조회 중...")
+        
+        # Firestore 쿼리: 오늘 날짜 데이터 전체 조회 (1번만!)
+        docs = db.collection('parking_records')\
+                 .where('날짜', '==', today)\
+                 .stream()
+        
+        # 차량번호: 상태 딕셔너리
+        processed_cars = {}
+        count = 0
+        
+        for doc in docs:
+            data = doc.to_dict()
+            car_number = data.get('차량번호', '')
+            status = data.get('상태', '')
+            doc_data_source = data.get('데이터소스', '')
+            
+            # 데이터소스가 일치하는 것만
+            if doc_data_source == data_source and car_number:
+                processed_cars[car_number] = status
+                count += 1
+        
+        # 상태별 통계
+        success_count = sum(1 for s in processed_cars.values() if '등록성공' in s)
+        partial_count = sum(1 for s in processed_cars.values() if '부분성공' in s)
+        no_car_count = sum(1 for s in processed_cars.values() if '차량 없음' in s)
+        fail_count = sum(1 for s in processed_cars.values() if '실패' in s)
+        pending_count = sum(1 for s in processed_cars.values() if s == '미등록')
+        
+        print(f"  ✅ Firebase 조회 완료: 총 {count}개 레코드")
+        print(f"     - 등록성공: {success_count}개")
+        print(f"     - 부분성공: {partial_count}개")
+        print(f"     - 차량없음: {no_car_count}개")
+        print(f"     - 실패: {fail_count}개")
+        print(f"     - 미등록: {pending_count}개")
+        
+        return processed_cars
+        
+    except Exception as e:
+        print(f"❌ Firebase 처리된 차량 조회 실패: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
