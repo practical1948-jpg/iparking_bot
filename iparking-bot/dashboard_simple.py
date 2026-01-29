@@ -73,7 +73,7 @@ else:
         
         # 탭으로 구분
         tabs = st.tabs(["📊 전체 현황", "🔍 상세 로그"])
-        
+         
         with tabs[0]:
             # 간단한 테이블
             import pandas as pd

@@ -15,7 +15,16 @@ import pandas as pd
 from pathlib import Path
 import glob
 import json
-from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, get_existing_record_by_car, clean_today_orphaned_records, get_processed_cars_today
+import threading  # 신규 일일 등록 감지용
+from firebase_helper import save_parking_record, initialize_firebase, check_record_exists, check_record_exists_by_car, get_existing_record_by_car, clean_today_orphaned_records, get_processed_cars_today, update_bot_heartbeat
+
+
+# ========================================
+# 🚨 신규 일일 등록 감지 시스템
+# ========================================
+NEW_DAILY_DETECTED = False  # 신규 일일 등록 감지 플래그
+LAST_DAILY_CHECK_TIME = None  # 마지막 체크 시간
+DETECTION_LOCK = threading.Lock()  # 스레드 안전성
 
 
 
@@ -35,6 +44,22 @@ EXECUTION_LOG_PATH = os.path.join(BASE_DIR, "file_execution_log.json")
 
 # 주차 DB 폴더 생성 (없으면)
 os.makedirs(DB_FOLDER, exist_ok=True)
+
+# 로그 폴더 생성
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+BOT_LOG_PATH = os.path.join(LOGS_DIR, f"bot_{datetime.now().strftime('%Y%m%d')}.log")
+
+def log_to_file(message, level="INFO"):
+    """콘솔 출력과 동시에 파일에 로그 기록"""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    formatted_msg = f"[{timestamp}] [{level}] {message}"
+    print(formatted_msg)
+    try:
+        with open(BOT_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(formatted_msg + "\n")
+    except Exception as e:
+        print(f"⚠️ 로그 파일 기록 실패: {e}")
 
 def get_current_round():
     """오늘 날짜 기준 실행 회차 결정"""
@@ -376,7 +401,7 @@ def read_manual_input():
 
 # CSV 파일에서 차량 정보 읽기
 def read_car_data_from_csv():
-    """CSV 파일에서 차량번호 및 상태 정보 읽기"""
+    """CSV 파일에서 차량번호 및 상태 정보 읽기 (우선순위 정렬 포함)"""
     try:
         # CSV 파일 읽기 (헤더가 2줄인 경우 처리)
         df = pd.read_csv(CSV_FILE_PATH, encoding='utf-8-sig')
@@ -398,16 +423,36 @@ def read_car_data_from_csv():
         if car_number_col:
             df.rename(columns={car_number_col: '차량번호'}, inplace=True)
         
-        # 상태, 처리시간, 회차 열 초기화 (매번 백지 상태로 시작)
-        # 원본 데이터(이름, 차량번호)만 유지하고 처리 결과는 리셋
-        df['상태'] = '미등록'
-        df['처리시간'] = pd.Series(dtype='object')  # 문자열 타입으로 명시
-        df['회차'] = pd.Series(dtype='object')      # 문자열 타입으로 명시
+        # 필수 컬럼 추가 (없으면)
+        if '상태' not in df.columns:
+            df['상태'] = '미등록'
+        if '처리시간' not in df.columns:
+            df['처리시간'] = pd.Series(dtype='object')
+        if '회차' not in df.columns:
+            df['회차'] = pd.Series(dtype='object')
+        if '데이터소스' not in df.columns:
+            df['데이터소스'] = '주차 명단'
         
-        print(f"✅ CSV 로드 완료 - 상태 초기화됨 (원본 데이터만 유지)")
+        # ========================================
+        # 🚀 우선순위 정렬: 일일 등록 먼저 처리!
+        # ========================================
+        # 정렬 전 원본 인덱스 저장 (업데이트 시 위치 추적용)
+        df['original_index'] = df.index
         
-        # 변경사항을 파일에 저장 (상태 초기화)
-        df.to_csv(CSV_FILE_PATH, index=False, encoding='utf-8-sig')
+        # 일일 등록 = 0 (먼저), 주차 명단 = 1 (나중)
+        df['_priority'] = df['데이터소스'].apply(
+            lambda x: 0 if str(x) == '일일 등록' else 1
+        )
+        df = df.sort_values('_priority').drop(columns=['_priority']).reset_index(drop=True)
+        
+        # 미등록만 필터링 (이미 처리된 차량 제외)
+        pending_mask = df['상태'].isin(['미등록', '']) | df['상태'].isna()
+        pending_count = pending_mask.sum()
+        total_count = len(df)
+        
+        print(f"✅ CSV 로드 완료 - 전체 {total_count}대, 미등록 {pending_count}대")
+        print(f"   📌 우선순위 정렬 완료 (일일 등록 → 주차 명단)")
+        print(f"   📌 원본 인덱스 보존 완료 (순서가 바뀌어도 정확한 위치 업데이트)")
         
         return df
     except Exception as e:
@@ -732,10 +777,14 @@ def apply_discount(driver, car_number_full, return_home=True):
         if popup_result == "session_expired":
             return "session_expired"
         
-        # 차량 없음 메시지
+        # 차량 없음 메시지 확인 (더 확실하게)
         try:
-            no_result = wait.until(EC.presence_of_element_located((By.ID, "parkName")))
-            if "검색된 차량이 없습니다." in no_result.text:
+            # parkName 요소가 있고, 그 안에 "검색된 차량이 없습니다" 텍스트가 명확히 있을 때만
+            no_result = wait.until(EC.visibility_of_element_located((By.ID, "parkName")))
+            no_result_text = no_result.text.strip()
+            
+            if "검색된 차량이 없습니다" in no_result_text:
+                print(f"    🚫 '차량 없음' 메시지 감지됨: {no_result_text}")
                 try:
                     home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
                     home_btn_right.click()
@@ -743,7 +792,15 @@ def apply_discount(driver, car_number_full, return_home=True):
                     pass
                 return "no_car"
         except Exception:
+            # parkName이 없거나 텍스트가 다르면 결과가 있을 수 있으므로 계속 진행
             pass
+            
+        # 결과 테이블 로딩 대기 (최대 2초)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".car-number-cell, td")))
+        except:
+            pass # 못 찾아도 아래에서 find_elements로 재확인
+            
         results = driver.find_elements(By.CSS_SELECTOR, ".car-number-cell")
         
         # 만약 .car-number-cell로 못 찾으면 일반 td 태그로도 시도
@@ -784,6 +841,9 @@ def apply_discount(driver, car_number_full, return_home=True):
                 return "error_multiple"
             else:
                 # 뒷 4자리도 안 맞음
+                print(f"    ℹ️ 검색된 차량 번호가 일치하지 않음 (화면 목록에서 찾을 수 없음)")
+                print(f"       - 검색 대상: {search_number}")
+                print(f"       - 화면 목록: {', '.join([normalize_car_number(r.text) for r in results])}")
                 try:
                     home_btn_right = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
                     home_btn_right.click()
@@ -887,6 +947,67 @@ def check_applied_discounts(driver, wait):
         print(f"    [할인권 확인 오류] {e}")
         return 0
 
+# ========================================
+# 🚨 신규 일일 등록 감지 백그라운드 스레드
+# ========================================
+def check_new_daily_background():
+    """
+    백그라운드 스레드: 5분마다 신규 일일 등록 체크
+    신규 감지 시 NEW_DAILY_DETECTED 플래그 설정
+    """
+    global NEW_DAILY_DETECTED, LAST_DAILY_CHECK_TIME
+    
+    print("🔍 [백그라운드] 신규 일일 등록 감지 스레드 시작")
+    
+    while True:
+        try:
+            time.sleep(300)  # 5분 대기
+            
+            if not CSV_FILE_PATH or not os.path.exists(CSV_FILE_PATH):
+                continue
+            
+            # CSV 재로드
+            df = pd.read_csv(CSV_FILE_PATH, encoding='utf-8-sig')
+            df.columns = df.columns.str.replace('\n', ' ').str.strip()
+            
+            # 데이터소스 컬럼 확인
+            if '데이터소스' not in df.columns:
+                continue
+            
+            # 일일 등록만 필터
+            daily_df = df[df['데이터소스'] == '일일 등록'].copy()
+            
+            if len(daily_df) == 0:
+                continue
+            
+            # 등록요청시간 컬럼 확인
+            if '등록요청시간' not in daily_df.columns:
+                continue
+            
+            # 마지막 체크 이후 신규 데이터 확인
+            if LAST_DAILY_CHECK_TIME is None:
+                # 첫 실행: 현재 시간 저장만
+                with DETECTION_LOCK:
+                    LAST_DAILY_CHECK_TIME = datetime.now()
+                print(f"🔍 [백그라운드] 초기화 완료 - 현재 일일 등록: {len(daily_df)}대")
+            else:
+                # 신규 데이터 확인
+                new_daily = daily_df[
+                    pd.to_datetime(daily_df['등록요청시간'], errors='coerce') > LAST_DAILY_CHECK_TIME
+                ]
+                
+                if len(new_daily) > 0:
+                    with DETECTION_LOCK:
+                        NEW_DAILY_DETECTED = True
+                        LAST_DAILY_CHECK_TIME = datetime.now()
+                    
+                    print(f"\n🚨 [백그라운드] ★★★ 신규 일일 차량 {len(new_daily)}대 감지! ★★★")
+                    print(f"   → 현재 처리 완료 후 처음부터 재시작합니다.\n")
+                    
+        except Exception as e:
+            print(f"⚠️ [백그라운드] 감지 오류 (무시): {e}")
+            continue
+
 def run_parking_automation():
     """주차권 등록 자동화 실행 함수"""
     print(f"\n=== iParking 자동화 실행 시작 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
@@ -945,6 +1066,13 @@ def run_parking_automation():
     for idx, row in df.iterrows():
         car_number_raw = str(row['차량번호']).strip()
         current_status = str(row['상태']).strip()
+        
+        # 정렬된 상태의 idx가 아닌, 원본 파일의 위치(original_index)를 사용
+        # (CSV 모드일 때만 original_index가 존재, 수동 모드는 없음)
+        if INPUT_MODE == 'csv' and 'original_index' in row:
+            original_idx = int(row['original_index'])
+        else:
+            original_idx = idx  # 수동 모드 등에서는 그냥 idx 사용
         
         # 이름 정보 가져오기 (있으면)
         name = str(row.get('이름', '')).strip() if '이름' in row else ''
@@ -1047,21 +1175,21 @@ def run_parking_automation():
             # 3개 모두 성공해야만 "성공" 처리 (엄격)
             if discount_count == 3:
                 print(f"  ✅ {display_name}{car_number_raw} → 주차권 3개 부여됨 (완료)")
-                update_csv_status(idx, f"등록성공(완료)", timestamp, car_number=car_number_raw, round_num=current_round)
+                update_csv_status(original_idx, f"등록성공(완료)", timestamp, car_number=car_number_raw, round_num=current_round)
                 success_count += 1
             elif discount_count > 0:
                 # 1~2개만 적용 = 부분 성공
                 print(f"  ⚠️ {display_name}{car_number_raw} → 주차권 {discount_count}개만 부여됨 (부분성공)")
-                update_csv_status(idx, f"부분성공({discount_count}개)", timestamp, car_number=car_number_raw, round_num=current_round)
+                update_csv_status(original_idx, f"부분성공({discount_count}개)", timestamp, car_number=car_number_raw, round_num=current_round)
             else:
                 # 0개 적용
                 # tab_results에서 차량 없음 확인
                 if any("no_car" in str(r) for r in tab_results):
                     print(f"  ⚠️ {display_name}{car_number_raw} → 차량 없음")
-                    update_csv_status(idx, "차량 없음", timestamp, car_number=car_number_raw, round_num=current_round)
+                    update_csv_status(original_idx, "차량 없음", timestamp, car_number=car_number_raw, round_num=current_round)
                 else:
                     print(f"  ❌ {display_name}{car_number_raw} → 주차권 0개 (부여 실패)")
-                    update_csv_status(idx, "실패(0개)", timestamp, car_number=car_number_raw, round_num=current_round)
+                    update_csv_status(original_idx, "실패(0개)", timestamp, car_number=car_number_raw, round_num=current_round)
             
             # 확인 완료 후 홈으로 돌아가기
             try:
@@ -1072,12 +1200,30 @@ def run_parking_automation():
                 
         except Exception as e:
             print(f"  [총 할인권 확인] {display_name}{car_number_raw} - 확인 중 오류: {e}")
-            update_csv_status(idx, "실패(오류)", datetime.now().strftime('%Y-%m-%d %H:%M:%S'), car_number=car_number_raw, round_num=current_round)
+            update_csv_status(original_idx, "실패(오류)", datetime.now().strftime('%Y-%m-%d %H:%M:%S'), car_number=car_number_raw, round_num=current_round)
             try:
                 home_btn = wait.until(EC.element_to_be_clickable((By.ID, "headerHome")))
                 home_btn.click()
             except Exception:
                 pass
+        
+        # ========================================
+        # 🚨 신규 일일 등록 감지 확인
+        # ========================================
+        # 현재 차량 처리 완료 후 체크
+        global NEW_DAILY_DETECTED
+        check_flag = False
+        with DETECTION_LOCK:
+            if NEW_DAILY_DETECTED:
+                check_flag = True
+                NEW_DAILY_DETECTED = False  # 플래그 리셋
+        
+        if check_flag:
+            print(f"\n{'='*60}")
+            print(f"🔄 신규 일일 차량 감지! 처음부터 재시작합니다.")
+            print(f"   (이미 처리된 차량은 자동으로 건너뜁니다)")
+            print(f"{'='*60}\n")
+            return  # run_parking_automation 종료 → 외부 루프에서 재호출
 
     print(f"\n=== 이번 사이클 완료 ===")
     print(f"처리한 차량: {processed_count}대")
@@ -1085,93 +1231,66 @@ def run_parking_automation():
 
 print("=== iParking 자동화 프로그램 시작 ===\n")
 
-# 데이터 입력 방식 선택
-print("데이터 입력 방식을 선택하세요:")
-print("-" * 60)
-for key, info in CSV_FILES.items():
-    file_path = info["path"]
-    exists = "✓" if os.path.exists(file_path) else "✗"
-    print(f"  {key}. {info['name']} {exists}")
-print(f"  2. 수동 입력 (이름 + 차량번호 직접 입력)")
-print("-" * 60)
+# 데이터 입력 방식 자동 선택 (최신 CSV가 있으면 자동 1번, 없으면 수동 입력)
+latest_csv = CSV_FILES["1"]["path"]
+if latest_csv and os.path.exists(latest_csv):
+    INPUT_MODE = 'csv'
+    CSV_FILE_PATH = latest_csv
+    file_name = os.path.basename(latest_csv)
+    file_time = datetime.fromtimestamp(os.path.getmtime(latest_csv)).strftime('%Y-%m-%d %H:%M:%S')
+    print(f"📁 주차_DB_파일 폴더에서 최신 파일 자동 선택됨:")
+    print(f"   파일명: {file_name}")
+    print(f"   수정시간: {file_time}")
+    print(f"✅ '차량_DB (대량 등록용)' 모드로 자동 시작합니다.")
+else:
+    print("데이터 입력 방식을 선택하세요 (최신 CSV를 찾을 수 없음):")
+    print("-" * 60)
+    for key, info in CSV_FILES.items():
+        file_path = info["path"]
+        exists = "✓" if os.path.exists(file_path) else "✗"
+        print(f"  {key}. {info['name']} {exists}")
+    print(f"  2. 수동 입력 (이름 + 차량번호 직접 입력)")
+    print("-" * 60)
 
-while True:
-    choice = input("\n번호를 입력하세요 (1 또는 2): ").strip()
-    
-    if choice == "2":
-        # 수동 입력 모드
-        INPUT_MODE = 'manual'
-        print(f"\n선택됨: 수동 입력 모드")
-        break
+    while True:
+        choice = input("\n번호를 입력하세요 (1 또는 2): ").strip()
         
-    elif choice in CSV_FILES:
-        # CSV 파일 모드
-        INPUT_MODE = 'csv'
-        default_path = CSV_FILES[choice]["path"]
-        default_dir = CSV_FILES[choice].get("default_dir", "")
-        
-        print(f"\n선택됨: {CSV_FILES[choice]['name']}")
-        
-        # 옵션 1번이고 주차_DB_파일 폴더에 파일이 있는 경우
-        if choice == "1" and default_path and os.path.exists(default_path):
-            file_name = os.path.basename(default_path)
-            file_time = datetime.fromtimestamp(os.path.getmtime(default_path)).strftime('%Y-%m-%d %H:%M:%S')
-            print(f"📁 주차_DB_파일 폴더에서 최신 파일 자동 선택:")
-            print(f"   파일명: {file_name}")
-            print(f"   수정시간: {file_time}")
-            CSV_FILE_PATH = default_path
+        if choice == "2":
+            # 수동 입력 모드
+            INPUT_MODE = 'manual'
+            print(f"\n선택됨: 수동 입력 모드")
             break
-        
-        print(f"기본 파일 경로: {default_path}")
-        
-        # 파일 존재 확인
-        if os.path.exists(default_path):
-            CSV_FILE_PATH = default_path
-            print(f"✓ 파일을 찾았습니다!")
-            break
-        else:
-            print(f"\n⚠️ 경고: 기본 파일을 찾을 수 없습니다!")
-            print(f"다른 파일을 선택하시겠습니까?")
-            print("  1) 파일 선택 대화상자 열기")
-            print("  2) 수동으로 경로 입력")
-            print("  3) 다시 선택")
-            print("  4) 종료")
             
-            sub_choice = input("\n번호를 입력하세요 (1-4): ").strip()
+        elif choice in CSV_FILES:
+            # CSV 파일 모드
+            INPUT_MODE = 'csv'
+            default_path = CSV_FILES[choice]["path"]
+            default_dir = CSV_FILES[choice].get("default_dir", "")
             
-            if sub_choice == "1":
-                # 파일 선택 대화상자
+            print(f"\n선택됨: {CSV_FILES[choice]['name']}")
+            
+            # 옵션 1번이고 주차_DB_파일 폴더에 파일이 있는 경우
+            if choice == "1" and default_path and os.path.exists(default_path):
+                CSV_FILE_PATH = default_path
+                break
+            
+            # 파일 존재 확인
+            if os.path.exists(default_path):
+                CSV_FILE_PATH = default_path
+                break
+            else:
+                print(f"\n⚠️ 경고: 기본 파일을 찾을 수 없습니다!")
+                # ... (이하 기존 파일 선택 대화상자 로직 유지 또는 간소화)
                 selected_path = select_csv_file(default_path, default_dir)
                 if selected_path and os.path.exists(selected_path):
                     CSV_FILE_PATH = selected_path
-                    print(f"✓ 파일 선택 완료!")
                     break
                 else:
-                    print("파일 선택 실패. 다시 선택하세요.")
-                    continue
-                    
-            elif sub_choice == "2":
-                # 수동 경로 입력
-                manual_path = input("CSV 파일 전체 경로를 입력하세요: ").strip().strip('"')
-                if os.path.exists(manual_path):
-                    CSV_FILE_PATH = manual_path
-                    print(f"✓ 파일을 찾았습니다!")
-                    break
-                else:
-                    print("파일을 찾을 수 없습니다. 다시 시도하세요.")
-                    continue
-                    
-            elif sub_choice == "3":
-                # 다시 선택
-                continue
-                
-            else:
-                # 종료
-                print("프로그램을 종료합니다.")
-                exit()
-        break
-    else:
-        print("잘못된 입력입니다. 1 또는 2를 입력하세요.")
+                    print("파일 선택 실패. 프로그램을 종료합니다.")
+                    exit()
+            break
+        else:
+            print("잘못된 입력입니다. 1 또는 2를 입력하세요.")
 
 print("\n" + "="*60)
 
@@ -1427,9 +1546,9 @@ if INPUT_MODE == 'manual':
                 print("\n입력된 데이터가 없습니다. 다시 입력하거나 종료하려면 'q'를 입력하세요.")
                 continue
             
-            # 데이터 준비 완료
-            print(f"\n수동 입력 데이터: {len(MANUAL_DATA)}개 차량")
-            print("데이터 준비 완료 ✓")
+            # 수동 입력 데이터 준비 완료
+            log_to_file(f"수동 입력 데이터: {len(MANUAL_DATA)}개 차량")
+            update_bot_heartbeat("Processing", f"수동 입력 {len(MANUAL_DATA)}건 처리 시작")
             
             # 자동화 실행
             run_parking_automation()
@@ -1437,7 +1556,8 @@ if INPUT_MODE == 'manual':
             # 자동 GitHub 업로드
             auto_push_to_github()
             
-            print("\n처리 완료! 다음 입력을 기다립니다...")
+            update_bot_heartbeat("Alive", "수동 입력 처리 완료")
+            log_to_file("처리 완료! 다음 입력을 기다립니다...")
             print("(종료하려면 다음 입력 시 'q' 또는 'quit' 입력)")
             
     except KeyboardInterrupt:
@@ -1448,28 +1568,44 @@ else:
     print("300초(5분)마다 자동화 실행을 시작합니다...")
     print("프로그램을 중단하려면 Ctrl+C를 누르세요.")
 
+    # ========================================
+    # 🚨 신규 일일 등록 감지 백그라운드 스레드 시작
+    # ========================================
+    print("\n🔍 신규 일일 등록 감지 시스템 활성화...")
+    detection_thread = threading.Thread(target=check_new_daily_background, daemon=True)
+    detection_thread.start()
+    print("✅ 5분마다 신규 일일 차량을 감지합니다.\n")
+
     cycle_count = 0
     try:
         while True:
             cycle_count += 1
-            print(f"\n{'='*50}")
-            print(f"사이클 {cycle_count} 시작")
-            print(f"{'='*50}")
+            log_to_file(f"{'='*50}")
+            log_to_file(f"사이클 {cycle_count} 시작")
+            log_to_file(f"{'='*50}")
+            
+            update_bot_heartbeat("Processing", f"{cycle_count}번째 사이클 시작")
             
             # 자동화 실행
-            run_parking_automation()
+            try:
+                run_parking_automation()
+                update_bot_heartbeat("Alive", f"{cycle_count}번째 사이클 완료")
+            except Exception as e:
+                log_to_file(f"❌ 자동화 도중 치명적 오류: {e}", "ERROR")
+                update_bot_heartbeat("Error", f"자동화 오류: {str(e)}")
             
             # 자동 GitHub 업로드
             auto_push_to_github()
             
-            print(f"\n다음 실행까지 300초(5분) 대기 중...")
-            print(f"다음 실행 예정 시간: {(datetime.now() + timedelta(seconds=300)).strftime('%Y-%m-%d %H:%M:%S')}")
+            log_to_file(f"다음 실행까지 300초(5분) 대기 중...")
+            log_to_file(f"다음 실행 예정 시간: {(datetime.now() + timedelta(seconds=300)).strftime('%Y-%m-%d %H:%M:%S')}")
             
             # 300초 대기
             time.sleep(300)
             
     except KeyboardInterrupt:
-        print("\n\n프로그램이 사용자에 의해 중단되었습니다.")
-        print("\n디버깅 Chrome 정리 중...")
+        log_to_file("프로그램이 사용자에 의해 중단되었습니다.")
+        update_bot_heartbeat("Stopped", "사용자가 중단함")
+        log_to_file("디버깅 Chrome 정리 중...")
         cleanup_debug_chrome()
-        print("=== iParking 자동화 프로그램 종료 ===")
+        log_to_file("=== iParking 자동화 프로그램 종료 ===")

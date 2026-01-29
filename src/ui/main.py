@@ -1,8 +1,9 @@
-# iParking 주차권 등록 실시간 대시보드
+# iParking 주차권 등록 실시간 대시보드 (Premium UI)
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 import re
@@ -15,13 +16,20 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
-# Firebase 연동
+# Add project root to sys.path
+current_dir = Path(__file__).resolve().parent
+project_root = current_dir.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
 try:
-    from firebase_helper import get_parking_records, initialize_firebase, update_remark, get_bot_status
+    from config import settings
+    from src.services.firebase import get_parking_records, initialize_firebase, update_remark, save_parking_record, get_bot_status
     FIREBASE_IMPORT_SUCCESS = True
 except ImportError as e:
     FIREBASE_IMPORT_SUCCESS = False
-    print(f"⚠️ Firebase 모듈 import 실패: {e}")
+    st.error(f"⚠️ Service import failed: {e}")
+    print(f"DEBUG: sys.path: {sys.path}")
 
 # 자동 새로고침 컴포넌트 임포트 (설치: pip install streamlit-autorefresh)
 try:
@@ -48,46 +56,19 @@ if AUTO_REFRESH_AVAILABLE and st.session_state.auto_refresh_enabled:
     # 10000ms = 10초마다 자동 새로고침
     st_autorefresh(interval=10000, key="datarefresh")
 
-# CSS 스타일 추가 (텍스트 색상 개선 및 섹션 간격 조정)
-st.markdown("""
-<style>
-    /* 텍스트 색상 명확하게 설정 */
-    .stMarkdown, .stText, p, div {
-        color: #ffffff !important;
-    }
-    
-    /* 테이블 텍스트 색상 */
-    .dataframe {
-        color: #ffffff !important;
-    }
-    
-    /* 강조 텍스트 */
-    strong {
-        color: #ffffff !important;
-        font-weight: bold;
-    }
-    
-    /* 섹션 간격 조정 */
-    .element-container {
-        margin-bottom: 1.5rem;
-    }
-    
-    /* 제목 간격 */
-    h1, h2, h3 {
-        margin-top: 1rem;
-        margin-bottom: 0.5rem;
-    }
-    
-    /* 통계 카드 통일 */
-    [data-testid="stMetricValue"] {
-        font-size: 2rem;
-    }
-    
-    [data-testid="stMetricLabel"] {
-        font-size: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+# 🎨 Load Premium CSS
+css_file = Path(__file__).parent / "assets" / "style.css"
+
+# 🍞 Toast Message Handler (Session State 기반)
+if "toast_msg" in st.session_state and st.session_state["toast_msg"]:
+    st.toast(st.session_state["toast_msg"], icon="✅")
+    del st.session_state["toast_msg"]
+
+if css_file.exists():
+    with open(css_file, "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+else:
+    st.warning(f"CSS file not found at {css_file}")
 
 # 제목
 st.title("🚗 iParking 주차권 자동등록 시스템")
@@ -140,7 +121,7 @@ else:
     FIREBASE_AVAILABLE = False
     st.sidebar.warning("⚠️ Firebase 모듈 없음")
 
-# 🤖 봇 상태 표시 섹션
+# 🤖 봇 가동 상태 표시
 st.sidebar.markdown("---")
 st.sidebar.subheader("🤖 봇 가동 상태")
 
@@ -151,54 +132,46 @@ if FIREBASE_AVAILABLE:
         last_heartbeat = bot_info.get('last_heartbeat')
         message = bot_info.get('message', '')
         
-        # 마지막 신호 시간 계산
         if last_heartbeat:
-            # Firestore 타임스탬프를 datetime으로 변환 (KST 고려)
             try:
-                # Firestore timestamp object or datetime
                 if hasattr(last_heartbeat, 'timestamp'):
                     last_time = last_heartbeat
                 else:
-                    # ISO string or other
                     last_time = datetime.fromisoformat(str(last_heartbeat).replace('Z', '+00:00'))
                 
-                # 현재 시간과 비교 (초 단위)
                 diff = datetime.now(last_time.tzinfo if last_time.tzinfo else None) - last_time
                 diff_seconds = diff.total_seconds()
                 
-                # 10분 이상 신호가 없으면 Down으로 간주
+                # 10분 기준
                 if diff_seconds > 600:
-                    status = "Disconnected"
                     st.sidebar.error(f"🛑 봇 응답 없음 ({int(diff_seconds/60)}분 경과)")
                 elif status == "Alive":
                     st.sidebar.success(f"✅ 가동 중 (정상)")
                 elif status == "Processing":
                     st.sidebar.info(f"⏳ 작업 처리 중...")
                 elif status == "Error":
-                    st.sidebar.warning(f"⚠️ 에러 발생")
+                    st.sidebar.error(f"⚠️ 에러 발생: {message[:15]}...")
                 else:
                     st.sidebar.write(f"ℹ️ 상태: {status}")
                 
                 st.sidebar.caption(f"🕒 마지막 신호: {last_time.strftime('%H:%M:%S')}")
-                if message:
+                if message and status != "Error":
                     st.sidebar.caption(f"💬 {message}")
-            except Exception as e:
-                st.sidebar.caption(f"🕒 시간 파싱 오류")
+            except:
+                st.sidebar.caption("🕒 시간 파싱 오류")
         else:
             st.sidebar.caption("신호 기록 없음")
     else:
-        st.sidebar.caption("봇 상태 정보를 가져올 수 없습니다.")
+        st.sidebar.caption("봇 정보를 가져올 수 없습니다.")
 else:
-    st.sidebar.caption("Firebase 연결이 필요합니다.")
+    st.sidebar.caption("Firebase 연결 필요")
 
-# CSV 파일 경로 (상대 경로 사용 - 배포 가능)
-# 현재 스크립트 파일의 위치를 기준으로 상위 디렉토리 사용
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_PATH = os.path.dirname(SCRIPT_DIR)  # iparking-bot 폴더의 상위 디렉토리
-DB_FOLDER = os.path.join(BASE_PATH, "주차_DB_파일")
-EXECUTION_LOG_PATH = os.path.join(BASE_PATH, "file_execution_log.json")
+# 📂 Path Configuration from Settings
+DB_FOLDER = str(settings.DATA_DIR)
+EXECUTION_LOG_PATH = str(settings.EXECUTION_LOG_PATH)
+DAILY_CSV_PATH_DEFAULT = str(settings.BASE_DIR / "(신규)주차등록(응답) - 설문지 응답 시트1.csv")
 
-# 주차 DB 폴더 생성 (없으면)
+# Ensure directories exist
 os.makedirs(DB_FOLDER, exist_ok=True)
 
 def load_execution_log():
@@ -223,8 +196,6 @@ def get_latest_db_file():
         print(f"최신 파일 검색 오류: {e}")
         return None
 
-# 설문지 응답 파일 경로
-DAILY_CSV_PATH_DEFAULT = os.path.join(BASE_PATH, "(신규)주차등록(응답) - 설문지 응답 시트1.csv")
 
 # 기본 파일 찾기
 DEFAULT_DB_CSV = get_latest_db_file() or ""
@@ -1520,6 +1491,114 @@ with tab_db:
 with tab_manual:
     data_name = "수동 입력"
     
+    # === 📝 일괄 등록 폼 (Batch Input) ===
+    st.subheader("📝 차량 일괄 등록")
+    st.caption("여러 차량을 한 번에 등록할 수 있습니다. 한 줄에 하나씩 입력하세요.")
+    
+    with st.container():
+        st.markdown("""
+        **입력 형식:**
+        - `차량번호만`: 예) `12가3456`
+        - `이름 차량번호`: 예) `홍길동 12가3456`
+        - 공백으로 구분하며, 여러 줄 입력 가능
+        """)
+        
+        # 텍스트 영역
+        input_text = st.text_area(
+            "차량 정보 입력",
+            placeholder="예:\n정세윤 42서4631\n19두0353\n김철수 123가4567",
+            height=200,
+            key="batch_input_text"
+        )
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            submit_btn = st.button("🚀 일괄 등록", type="primary", use_container_width=True)
+        with col2:
+            if input_text:
+                lines = [line.strip() for line in input_text.split('\n') if line.strip()]
+                st.caption(f"📊 입력된 차량: {len(lines)}대")
+        
+        if submit_btn:
+            if not input_text.strip():
+                st.error("⚠️ 차량 정보를 입력해주세요.")
+            else:
+                # 파싱 로직
+                lines = [line.strip() for line in input_text.split('\n') if line.strip()]
+                parsed_cars = []
+                error_count = 0
+                
+                for line in lines:
+                    parts = line.split()
+                    
+                    if len(parts) == 1:
+                        # 차량번호만
+                        car_number = re.sub(r'\s+', '', parts[0])
+                        name = "미입력"
+                    elif len(parts) >= 2:
+                        # 첫 단어가 순수 한글이면 이름
+                        if re.match(r'^[가-힣]+$', parts[0]):
+                            name = parts[0]
+                            car_number = re.sub(r'\s+', '', ''.join(parts[1:]))
+                        else:
+                            # 전체를 차량번호로
+                            car_number = re.sub(r'\s+', '', ''.join(parts))
+                            name = "미입력"
+                    else:
+                        continue
+                    
+                    # 차량번호 유효성 검사 (최소 5자)
+                    if len(re.sub(r'[^가-힣0-9]', '', car_number)) < 5:
+                        st.warning(f"⚠️ '{line}' - 차량번호가 너무 짧습니다 (5자 미만)")
+                        error_count += 1
+                        continue
+                    
+                    parsed_cars.append({
+                        "차량번호": car_number,
+                        "성함": name
+                    })
+                
+                # === CSV에 우선 추가 (맨 위) ===
+                if parsed_cars:
+                    try:
+                        from src.utils.csv_utils import prepend_to_csv
+                        csv_success, csv_error = prepend_to_csv(parsed_cars)
+                        
+                        if csv_success > 0:
+                            st.success(f"✅ {csv_success}대 CSV에 등록 완료! (우선 처리됨)")
+                        if csv_error > 0:
+                            st.warning(f"⚠️ {csv_error}대 중복 또는 실패")
+                    except Exception as e:
+                        st.error(f"❌ CSV 저장 실패: {e}")
+                        csv_success = 0
+                    
+                    # === Firebase에도 저장 (대시보드 표시용) ===
+                    for car_data in parsed_cars:
+                        new_data = {
+                            "차량번호": car_data['차량번호'],
+                            "성함": car_data['성함'],
+                            "상태": "미등록",
+                            "데이터소스": "일일 등록",
+                            "등록요청시간": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            "날짜": datetime.now().strftime('%Y-%m-%d')
+                        }
+                        save_parking_record(new_data)
+                
+                if error_count > 0:
+                    st.error(f"❌ {error_count}대 형식 오류")
+                
+                # 캐시 초기화 및 새로고침
+                if parsed_cars:
+                    st.cache_data.clear()
+                    # 입력 필드 초기화
+                    st.session_state["batch_input_text"] = ""
+                    # 성공 메시지 토스트 예약
+                    st.session_state["toast_msg"] = f"{csv_success}대 등록 완료! (명단으로 이동됨)"
+                    time.sleep(1)
+                    st.rerun()
+
+    st.markdown("---")
+    
     # Firebase에서 수동 입력 데이터만 필터링
     if FIREBASE_AVAILABLE:
         df_all = load_data_from_firebase()
@@ -1533,6 +1612,7 @@ with tab_manual:
         df = None
     
     render_data_tab(df, data_name, '', is_all_mode=False)
+
 
 with tab_all:
     data_name = "전체 (주차명단 + 수동입력)"

@@ -4,6 +4,7 @@ Firebase Firestore 연동 헬퍼 모듈
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.field_path import FieldPath
 from datetime import datetime
 import os
 from pathlib import Path
@@ -511,8 +512,9 @@ def get_processed_cars_today(data_source='주차 명단'):
         print(f"  📊 Firebase에서 오늘({today}) 처리된 차량 조회 중...")
         
         # Firestore 쿼리: 오늘 날짜 데이터 전체 조회 (1번만!)
+        # FieldPath를 사용하여 한글 필드명 파싱 오류 방지
         docs = db.collection('parking_records')\
-                 .where('날짜', '==', today)\
+                 .where(FieldPath('날짜'), '==', today)\
                  .stream()
         
         # 차량번호: 상태 딕셔너리
@@ -551,3 +553,50 @@ def get_processed_cars_today(data_source='주차 명단'):
         import traceback
         traceback.print_exc()
         return {}
+
+
+def update_bot_heartbeat(status="Alive", message=""):
+    """
+    봇의 현재 상태와 타임스탬프를 Firebase에 기록
+    
+    Args:
+        status (str): 봇 상태 ("Alive", "Processing", "Error", "Stopped")
+        message (str): 상세 메시지 또는 에러 내용
+    """
+    try:
+        db = get_db()
+        if not db:
+            return False
+            
+        doc_ref = db.collection('bot_status').document('main_bot')
+        doc_ref.set({
+            'status': status,
+            'last_heartbeat': firestore.SERVER_TIMESTAMP,
+            'message': message,
+            'hostname': os.environ.get('COMPUTERNAME', 'Unknown')
+        }, merge=True)
+        return True
+    except Exception as e:
+        print(f"❌ 하트비트 업데이트 실패: {e}")
+        return False
+
+
+def get_bot_status():
+    """
+    Firebase에서 봇의 현재 상태와 마지막 하트비트 시간을 조회
+    
+    Returns:
+        dict: 봇 상태 정보 (없으면 None)
+    """
+    try:
+        db = get_db()
+        if not db:
+            return None
+            
+        doc = db.collection('bot_status').document('main_bot').get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
+    except Exception as e:
+        print(f"❌ 봇 상태 조회 실패: {e}")
+        return None
